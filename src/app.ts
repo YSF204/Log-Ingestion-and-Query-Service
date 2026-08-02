@@ -82,21 +82,10 @@ app.post("/logs", async (req, res) => {
     }
 });
 
-app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    if (error instanceof SyntaxError && 'body' in error) {
-        return res.status(400).json({
-            error: "Invalid JSON payload"
-        })
-    }
-    next(error)
-});
-
-
 app.get("/logs", async (_req, res) => {
 
     try {
         const rows = await db.select().from(logs).orderBy(desc(logs.timestamp), desc(logs.id)).limit(100);
-        const lastRow = rows.at(-1);
         return res.status(200).json({
             logs: rows.map((row) => ({
                 id: String(row.id),
@@ -107,13 +96,27 @@ app.get("/logs", async (_req, res) => {
                 attributes: row.attributes
 
             })),
-            next_cursor: lastRow ? String(lastRow.id) : null,
+            next_cursor: null,
         });
 
     } catch (error) {
+        console.error('Failed to fetch logs:', error);
+
+        return res.status(500).json({
+            error: 'failed to fetch logs',
+        });
 
     }
 
 })
+
+app.use((error: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (error instanceof SyntaxError && 'body' in error) {
+        return res.status(400).json({
+            error: "Invalid JSON payload"
+        })
+    }
+    next(error)
+});
 
 export default app;
