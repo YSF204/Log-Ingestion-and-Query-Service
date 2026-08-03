@@ -23,3 +23,5 @@ export const logSchema = z.object({
         .default({}),
 
 })
+
+export type ValidLog = z.infer<typeof logSchema>;
