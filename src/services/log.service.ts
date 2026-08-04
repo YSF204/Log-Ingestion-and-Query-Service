@@ -1,4 +1,5 @@
 import {
+    asc,
     and,
     desc,
     eq,
@@ -13,6 +14,13 @@ import { db } from '../db';
 import { logs } from '../db/schema';
 import { encodeCursor, type LogQuery } from '../schemas/log-query';
 import type { ValidLog } from '../schemas/log';
+import type { AggregateQuery } from '../schemas/log-aggregation-query';
+
+
+type LogFilterInput = Pick<
+    LogQuery,
+    'service' | 'level' | 'since' | 'until' | 'q' | 'attributes'
+>;
 
 export async function insertLogs(entries: ValidLog[]): Promise<void> {
     await db.insert(logs).values(
@@ -27,7 +35,7 @@ export async function insertLogs(entries: ValidLog[]): Promise<void> {
 }
 
 // Aggregate queries will reuse these filters, so the SQL rules live in one place.
-export function buildLogFilterConditions(query: LogQuery): SQL[] {
+export function buildLogFilterConditions(query: LogFilterInput): SQL[] {
     const conditions: SQL[] = [];
 
     if (query.service !== undefined) {
@@ -91,4 +99,67 @@ export async function findLogs(query: LogQuery) {
         rows: pageRows,
         nextCursor: hasMore && lastRow ? encodeCursor(lastRow) : null,
     };
+}
+
+
+const bucketIntervals = {
+    '1m': sql`INTERVAL '1 minute'`,
+    '5m': sql`INTERVAL '5 minutes'`,
+    '1h': sql`INTERVAL '1 hour'`,
+    '1d': sql`INTERVAL '1 day'`,
+} as const;
+
+export async function findAggregatedLogs(
+    query: AggregateQuery,
+) {
+    const conditions = buildLogFilterConditions(query);
+    const interval = bucketIntervals[query.bucket];
+
+    const bucketStart = sql<Date>`
+    date_bin(
+        ${interval},
+        ${logs.timestamp},
+        TIMESTAMPTZ '1970-01-01 00:00:00+00'
+    )
+`.mapWith((value) => {
+        if (value instanceof Date) {
+            return value;
+        }
+
+        return new Date(String(value));
+    }); const count = sql<number>`count(*)::integer`;
+
+    if (query.group_by === undefined) {
+        const rows = await db
+            .select({
+                bucketStart,
+                count,
+            })
+            .from(logs)
+            .where(and(...conditions))
+            .groupBy(bucketStart)
+            .orderBy(asc(bucketStart));
+
+        return rows.map((row) => ({
+            bucketStart: row.bucketStart,
+            groupValue: null,
+            count: row.count,
+        }));
+    }
+
+    const groupColumn =
+        query.group_by === 'service'
+            ? logs.service
+            : logs.level;
+
+    return db
+        .select({
+            bucketStart,
+            groupValue: groupColumn,
+            count,
+        })
+        .from(logs)
+        .where(and(...conditions))
+        .groupBy(bucketStart, groupColumn)
+        .orderBy(asc(bucketStart), asc(groupColumn));
 }

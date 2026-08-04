@@ -1,7 +1,10 @@
 import type { Request, Response } from 'express';
 import { logSchema, type ValidLog } from '../schemas/log';
 import { parseLogQuery } from '../schemas/log-query';
-import { findLogs, insertLogs } from '../services/log.service';
+import { findLogs, insertLogs, findAggregatedLogs } from '../services/log.service';
+import { parseAggregateQuery } from '../schemas/log-aggregation-query';
+
+// POST /logs: validate and store log entries from the request body.
 
 export async function ingestLogs(req: Request, res: Response) {
     if (
@@ -42,7 +45,7 @@ export async function ingestLogs(req: Request, res: Response) {
         rejected,
     });
 }
-
+// GET /logs: validate query-string filters, then fetch matching log entries.
 export async function queryLogs(req: Request, res: Response) {
     const query = parseLogQuery(req.query);
 
@@ -64,3 +67,23 @@ export async function queryLogs(req: Request, res: Response) {
         next_cursor: result.nextCursor,
     });
 }
+
+export async function aggregateLogs(req: Request, res: Response) {
+    const query = parseAggregateQuery(req.query);
+
+    if (!query.success) {
+        return res.status(400).json({ error: query.error });
+    }
+
+    const rows = await findAggregatedLogs(query.data);
+    
+    return res.status(200).json({
+        buckets: rows.map((row)=>({
+            start: row.bucketStart.toISOString(),
+            group: row.groupValue,
+            count: row.count
+        })),
+    });
+    
+    
+}       

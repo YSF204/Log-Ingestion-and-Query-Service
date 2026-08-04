@@ -7,6 +7,8 @@ const limitSchema = z.string()
     }, 'limit must be an integer between 1 and 1000')
     .transform(Number);
 
+// These are URL query parameters used by GET /logs.
+// Express gives us strings here, so this schema also converts `limit` to a number.
 const logQuerySchema = z.object({
     service: z.string().optional(),
     level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
@@ -84,17 +86,20 @@ function decodeCursor(cursor: string): DecodedCursor | null {
 }
 
 export function parseLogQuery(query: unknown): ParseResult {
-    const result = logQuerySchema.safeParse(query);
+    // A POST /logs request validates log entries in `req.body` separately.
+    // GET /logs receives a new, independent URL query string, so it must be
+    // validated here before it is used to build the database query.
+    const parsedQuery = logQuerySchema.safeParse(query);
 
-    if (!result.success) {
+    if (!parsedQuery.success) {
         return {
             success: false,
-            error: result.error.issues[0]?.message ?? 'invalid query parameters',
+            error: parsedQuery.error.issues[0]?.message ?? 'invalid query parameters',
         };
     }
 
-    const since = result.data.since ? new Date(result.data.since) : undefined;
-    const until = result.data.until ? new Date(result.data.until) : undefined;
+    const since = parsedQuery.data.since ? new Date(parsedQuery.data.since) : undefined;
+    const until = parsedQuery.data.until ? new Date(parsedQuery.data.until) : undefined;
 
     if (since !== undefined && until !== undefined && until < since) {
         return { success: false, error: 'until cannot be earlier than since' };
@@ -121,23 +126,23 @@ export function parseLogQuery(query: unknown): ParseResult {
         attributes.push({ key, value: queryValue });
     }
 
-    const cursor = result.data.cursor
-        ? decodeCursor(result.data.cursor)
+    const cursor = parsedQuery.data.cursor
+        ? decodeCursor(parsedQuery.data.cursor)
         : undefined;
 
-    if (result.data.cursor !== undefined && cursor === null) {
+    if (parsedQuery.data.cursor !== undefined && cursor === null) {
         return { success: false, error: 'invalid cursor' };
     }
 
     return {
         success: true,
         data: {
-            service: result.data.service,
-            level: result.data.level,
+            service: parsedQuery.data.service,
+            level: parsedQuery.data.level,
             since,
             until,
-            q: result.data.q,
-            limit: result.data.limit ?? 100,
+            q: parsedQuery.data.q,
+            limit: parsedQuery.data.limit ?? 100,
             attributes,
             cursor: cursor ?? undefined,
         },
