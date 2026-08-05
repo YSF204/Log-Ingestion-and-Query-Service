@@ -8,7 +8,8 @@
     "test:watch": "vitest",
     "dev": "tsx watch src/server.ts",
     "db:migrate": "drizzle-kit migrate",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "test:smoke": "vitest run smoke/contract-smoke.test.ts"
   },
   "keywords": [],
   "author": "",
