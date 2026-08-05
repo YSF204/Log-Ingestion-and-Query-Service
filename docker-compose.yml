@@ -5,6 +5,9 @@ services:
       POSTGRES_USER: logs_user
       POSTGRES_PASSWORD: logs_password
       POSTGRES_DB: logs_db
+    ports:
+      - "127.0.0.1:5433:5432"
+
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -14,16 +17,15 @@ services:
       retries: 5
 
   app:
-   build: .
-   ports:
-    - "8080:8080"
-   environment:
-    DATABASE_URL: postgres://logs_user:logs_password@db:5432/logs_db
-   depends_on:
-    db:
-      condition: service_healthy
-
-
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://logs_user:logs_password@db:5432/logs_db
+      RETENTION_PERIOD_DAYS: ${RETENTION_DAYS:-30}
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   postgres_data:
