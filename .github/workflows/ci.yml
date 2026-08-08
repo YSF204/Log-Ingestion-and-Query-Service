@@ -46,6 +46,9 @@ jobs:
       - name: Type-check
         run: npm run build
 
+      - name: Lint dashboard
+        run: npm run lint:dashboard
+
       - name: Apply migrations
         run: npm run db:migrate
 

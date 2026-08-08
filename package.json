@@ -4,7 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "build": "tsc --noEmit",
+    "build": "npm run build:server && npm run build:dashboard",
+    "build:server": "tsc --noEmit",
+    "build:dashboard": "npm --prefix dashboard run build",
+    "lint:dashboard": "npm --prefix dashboard run lint",
     "test": "vitest run src/tests",
     "test:watch": "vitest",
     "dev": "tsx watch src/server.ts",
@@ -17,6 +20,9 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "workspaces": [
+    "dashboard"
+  ],
   "dependencies": {
     "@types/pg-copy-streams": "^1.2.5",
     "dotenv": "^17.4.2",

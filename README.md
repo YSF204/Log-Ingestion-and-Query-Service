@@ -5,10 +5,10 @@ A high-throughput TypeScript API backed by PostgreSQL. It accepts structured log
 ## Quick start
 
 ```bash
-docker compose up --build
+docker compose up 
 ```
 
-The API is available at `http://localhost:8080`. No environment file, authentication, or manual migration step is required.
+The operational dashboard and API are available at `http://localhost:8080`. No environment file, authentication, separate frontend process, or manual migration step is required.
 
 ```bash
 curl http://localhost:8080/health
@@ -50,6 +50,25 @@ GET /logs/aggregate
 ```
 
 The ingestion hot path remains small: one PostgreSQL `COPY` and one grouped rollup upsert per accepted batch.
+
+## Dashboard
+
+The built-in **Eventline** dashboard is enabled by default and served by the application container at `http://localhost:8080`. It is additive: all required API endpoints keep their exact paths and response contracts.
+
+Every value comes from the live service—there are no placeholder metrics. The dashboard provides:
+
+- An operational overview derived from time-bucketed aggregates, including event volume, current rate, error ratio, active services, previous-period comparison, severity distribution, and recent events
+- A log explorer with message, service, level, time-range, and arbitrary `attr.<key>` filters, cursor pagination, JSON export, and full event inspection
+- A batch-ingest console that sends the exact `POST /logs` format and displays per-entry acceptance and rejection feedback
+- Manual refresh, optional 15-second live refresh, light/dark appearances, keyboard search focus (`Ctrl/⌘ K`), mobile navigation, and reduced-motion/transparency support
+
+For frontend-only development, start the API and then run:
+
+```bash
+npm --prefix dashboard run dev
+```
+
+Vite proxies `/health` and `/logs` to `localhost:8080`. Production assets are built by `npm run build` and served from the same origin by Express.
 
 ## API
 
@@ -245,7 +264,7 @@ Useful overrides:
 | `RETENTION_DAYS` | `30` | Log retention period |
 | `DB_POOL_MAX` | `20` | PostgreSQL connection pool limit |
 
-Authentication, multi-tenancy, rate limiting, dashboards, and alerting are not implemented. Therefore, plain `docker compose up` always starts the required unauthenticated core service with no quotas.
+The dashboard is the only optional product feature currently implemented. It is enabled by default, requires no environment variables, and does not alter API behavior. Authentication, multi-tenancy, rate limiting, and alerting are not implemented. Therefore, plain `docker compose up` always starts the required unauthenticated core service with no quotas.
 
 ## Tests and CI
 
@@ -253,6 +272,7 @@ Authentication, multi-tenancy, rate limiting, dashboards, and alerting are not i
 npm ci
 npm run db:migrate
 npm run build
+npm run lint:dashboard
 npm test
 npm run test:smoke
 ```
@@ -268,4 +288,3 @@ GitHub Actions runs the type-check, migrations, tests, Docker build, and a contr
 - Filtered aggregations using `q` or `attr.*` scan raw matching rows.
 - Retention is row-batched rather than partition-based.
 - Cursors are encoded but not signed or tied to a filter set.
-- The project does not include authentication or operational dashboards.

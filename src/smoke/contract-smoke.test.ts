@@ -74,6 +74,16 @@ describe('Docker contract smoke test', () => {
         await waitForHealth();
     }, 65_000);
 
+    it('serves the operational dashboard', async () => {
+        const response = await fetch(`${BASE_URL}/`);
+        const body = await response.text();
+
+        expect(response.status).toBe(200);
+        expect(response.headers.get('content-type'))
+            .toContain('text/html');
+        expect(body).toContain('Eventline · Log Observatory');
+    });
+
     it('supports the required API contract', async () => {
         const testId = String(Date.now());
         const service = `contract-smoke-${testId}`;
