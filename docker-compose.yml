@@ -1,6 +1,8 @@
 services:
   db:
     image: postgres:16-alpine
+    cpus: 1.0
+    mem_limit: 1g
     environment:
       POSTGRES_USER: logs_user
       POSTGRES_PASSWORD: logs_password
@@ -18,14 +20,39 @@ services:
 
   app:
     build: .
+    cpus: 0.5
+    mem_limit: 256m
     ports:
       - "8080:8080"
     environment:
       DATABASE_URL: postgres://logs_user:logs_password@db:5432/logs_db
-      RETENTION_PERIOD_DAYS: ${RETENTION_DAYS:-30}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
     depends_on:
       db:
         condition: service_healthy
+
+  k6:
+    image: grafana/k6:latest
+    profiles:
+      - load-test
+    volumes:
+      - ./load:/scripts:ro
+    environment:
+      BASE_URL: http://app:8080
+      BATCH_SIZE: ${LOAD_BATCH_SIZE:-500}
+      LOGS_PER_SECOND: ${LOAD_LOGS_PER_SECOND:-15000}
+      DURATION: ${LOAD_DURATION:-30s}
+      LOAD_MODE: ${LOAD_MODE:-both}
+      LOAD_AGGREGATION_RATE: ${LOAD_AGGREGATION_RATE:-1}
+      PRE_ALLOCATED_VUS: ${LOAD_PRE_ALLOCATED_VUS:-100}
+      MAX_VUS: ${LOAD_MAX_VUS:-500}
+      AGGREGATION_WINDOW_MINUTES: ${LOAD_AGGREGATION_WINDOW_MINUTES:-60}
+    command:
+      - run
+      - /scripts/k6.js
+    depends_on:
+      app:
+        condition: service_started
 
 volumes:
   postgres_data:
