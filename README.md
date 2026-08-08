@@ -14,6 +14,18 @@ The operational dashboard and API are available at `http://localhost:8080`. No e
 curl http://localhost:8080/health
 ```
 
+### Optional rate limiting
+
+The API includes a short-window `express-rate-limit` guard for `/logs` and `/logs/aggregate`. It is disabled by default so a plain `docker compose up` remains compatible with the required load generator. Enable it explicitly when running the service with:
+
+```env
+RATE_LIMIT_ENABLED=true
+RATE_LIMIT_WINDOW_MS=1000
+RATE_LIMIT_MAX=100
+```
+
+When enabled, the limit is applied per client IP and exceeded requests return `429` with an `error` body and standard rate-limit headers. `/health` and the dashboard assets are not rate limited.
+
 ## Architecture
 
 PostgreSQL is the source of truth. The application is stateless and organized by responsibility:
