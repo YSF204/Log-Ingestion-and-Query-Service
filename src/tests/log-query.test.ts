@@ -9,7 +9,7 @@ import {
 } from 'vitest';
 
 import app from '../app';
-import { pool } from '../db';
+import { pool } from '../db/client';
 
 const TEST_RUN_ID = 'log-query-integration-test';
 let paymentDeclinedAt: Date;

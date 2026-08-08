@@ -7,8 +7,8 @@ import {
     it,
 } from 'vitest';
 
-import app from './../app';
-import { pool } from './../db';
+import app from '../app';
+import { pool } from '../db/client';
 
 const CHECKOUT_SERVICE = 'aggregate-test-checkout';
 const AUTH_SERVICE = 'aggregate-test-auth';
@@ -24,6 +24,14 @@ async function deleteTestLogs() {
             WHERE attributes ->> 'test_run_id' = $1
         `,
         [TEST_RUN_ID],
+    );
+
+    await pool.query(
+        `
+            DELETE FROM log_rollups
+            WHERE service = ANY($1::text[])
+        `,
+        [[CHECKOUT_SERVICE, AUTH_SERVICE]],
     );
 }
 

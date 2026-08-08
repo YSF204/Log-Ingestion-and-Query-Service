@@ -1,5 +1,5 @@
 import type { Request, Response } from 'express';
-import { pool } from '../db';
+import { pool } from '../db/client';
 
 export async function healthCheck(_req: Request, res: Response) {
     try {

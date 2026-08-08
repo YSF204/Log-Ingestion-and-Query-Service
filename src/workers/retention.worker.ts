@@ -7,20 +7,24 @@ const RETENTION_INTERVAL_MS = 60_000;
 
 let workerStarted = false;
 
-export function calculateRetentionCutoff(now: Date, retentionDays: number = RETENTION_DAYS): Date {
-    const retentionTime =
-        retentionDays * MILLISECONDS_PER_DAY;
+export function calculateRetentionCutoff(
+    now: Date,
+    retentionDays: number = RETENTION_DAYS,
+): Date {
+    const retentionTime = retentionDays * MILLISECONDS_PER_DAY;
 
     return new Date(now.getTime() - retentionTime);
 }
 
-
 async function runRetentionCycle(): Promise<void> {
-
     const startedAt = Date.now();
     const cutoff = calculateRetentionCutoff(new Date());
+
     try {
-        const deletedCount = await deleteExpiredLogs(cutoff, RETENTION_BATCH_SIZE);
+        const deletedCount = await deleteExpiredLogs(
+            cutoff,
+            RETENTION_BATCH_SIZE,
+        );
 
         if (deletedCount > 0) {
             const durationMs = Date.now() - startedAt;
@@ -30,7 +34,6 @@ async function runRetentionCycle(): Promise<void> {
                 `in ${durationMs}ms`,
             );
         }
-
     } catch (error) {
         console.error('Error during retention cleanup:', error);
     } finally {

@@ -1,5 +1,8 @@
 import { Router } from 'express';
-import { ingestLogs, queryLogs , aggregateLogs } from '../controllers/log.controller';
+
+import { aggregateLogs } from '../controllers/log-aggregation.controller';
+import { ingestLogs } from '../controllers/log-ingestion.controller';
+import { queryLogs } from '../controllers/log-query.controller';
 
 const router = Router();
 

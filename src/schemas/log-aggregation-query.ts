@@ -1,13 +1,24 @@
 import { z } from 'zod';
-import type { AttributeFilter } from './log-query';
+
+import {
+    isoTimestampSchema,
+    logLevelSchema,
+    type LogLevel,
+    type ParseResult,
+} from './common';
+import {
+    hasInvalidTimeRange,
+    parseAttributeFilters,
+    type AttributeFilter,
+} from './query-helpers';
 
 const aggregateQuerySchema = z.object({
     service: z.string().optional(),
-    level: z.enum(['debug', 'info', 'warn', 'error']).optional(),
+    level: logLevelSchema.optional(),
     q: z.string().optional(),
 
-    since: z.string().datetime({ offset: true }),
-    until: z.string().datetime({ offset: true }),
+    since: isoTimestampSchema,
+    until: isoTimestampSchema,
 
     bucket: z.enum(['1m', '5m', '1h', '1d']),
     group_by: z.enum(['service', 'level']).optional(),
@@ -15,7 +26,7 @@ const aggregateQuerySchema = z.object({
 
 export type AggregateQuery = {
     service: string | undefined;
-    level: 'debug' | 'info' | 'warn' | 'error' | undefined;
+    level: LogLevel | undefined;
     q: string | undefined;
 
     since: Date;
@@ -27,19 +38,9 @@ export type AggregateQuery = {
     attributes: AttributeFilter[];
 };
 
-type ParseAggregateQueryResult =
-    | {
-        success: true;
-        data: AggregateQuery;
-    }
-    | {
-        success: false;
-        error: string;
-    };
-
 export function parseAggregateQuery(
     query: unknown,
-): ParseAggregateQueryResult {
+): ParseResult<AggregateQuery> {
     const result = aggregateQuerySchema.safeParse(query);
 
     if (!result.success) {
@@ -54,42 +55,17 @@ export function parseAggregateQuery(
     const since = new Date(result.data.since);
     const until = new Date(result.data.until);
 
-    if (until < since) {
+    if (hasInvalidTimeRange(since, until)) {
         return {
             success: false,
             error: 'until cannot be earlier than since',
         };
     }
 
-    const attributes: AttributeFilter[] = [];
+    const attributes = parseAttributeFilters(query);
 
-    for (const [queryKey, queryValue] of Object.entries(
-        query as Record<string, unknown>,
-    )) {
-        if (!queryKey.startsWith('attr.')) {
-            continue;
-        }
-
-        const key = queryKey.slice('attr.'.length);
-
-        if (key.length === 0) {
-            return {
-                success: false,
-                error: 'attribute filter key cannot be empty',
-            };
-        }
-
-        if (typeof queryValue !== 'string') {
-            return {
-                success: false,
-                error: `attribute filter "${key}" must have one value`,
-            };
-        }
-
-        attributes.push({
-            key,
-            value: queryValue,
-        });
+    if (!attributes.success) {
+        return attributes;
     }
 
     return {
@@ -102,7 +78,7 @@ export function parseAggregateQuery(
             until,
             bucket: result.data.bucket,
             group_by: result.data.group_by,
-            attributes,
+            attributes: attributes.data,
         },
     };
 }

@@ -9,7 +9,7 @@ import {
 } from 'vitest';
 
 import app from '../app';
-import { pool } from '../db';
+import { pool } from '../db/client';
 
 const TEST_RUN_ID = 'log-ingestion-integration-test';
 const TEST_SERVICE = 'ingestion-test-service';
@@ -21,6 +21,14 @@ async function deleteTestLogs() {
             WHERE "attributes" ->> 'test_run_id' = $1
         `,
         [TEST_RUN_ID],
+    );
+
+    await pool.query(
+        `
+            DELETE FROM "log_rollups"
+            WHERE "service" = $1
+        `,
+        [TEST_SERVICE],
     );
 }
 
