@@ -201,7 +201,7 @@ describe('deleteExpiredLogs', () => {
 
         const afterFirstBatch = await pool.query<{ count: number }>(
             `
-                SELECT "count"::integer AS "count"
+                SELECT sum("count")::integer AS "count"
                 FROM "log_rollups"
                 WHERE "bucket_start" = $1
                   AND "service" = $2
@@ -216,7 +216,7 @@ describe('deleteExpiredLogs', () => {
 
         const afterSecondBatch = await pool.query<{ count: number }>(
             `
-                SELECT "count"::integer AS "count"
+                SELECT sum("count")::integer AS "count"
                 FROM "log_rollups"
                 WHERE "bucket_start" = $1
                   AND "service" = $2

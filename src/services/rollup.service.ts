@@ -50,6 +50,26 @@ export async function incrementRollups(
     client: PoolClient,
     deltas: RollupDelta[],
 ): Promise<void> {
+    await insertRollupDeltas(client, deltas);
+}
+
+export async function decrementRollups(
+    client: PoolClient,
+    deltas: RollupDelta[],
+): Promise<void> {
+    await insertRollupDeltas(
+        client,
+        deltas.map((delta) => ({
+            ...delta,
+            count: -delta.count,
+        })),
+    );
+}
+
+async function insertRollupDeltas(
+    client: PoolClient,
+    deltas: RollupDelta[],
+): Promise<void> {
     if (deltas.length === 0) {
         return;
     }
@@ -60,50 +80,6 @@ export async function incrementRollups(
         `
             INSERT INTO log_rollups (bucket_start, service, level, count)
             VALUES ${values.placeholders}
-            ON CONFLICT (bucket_start, service, level)
-            DO UPDATE SET count = log_rollups.count + EXCLUDED.count
-        `,
-        values.parameters,
-    );
-}
-
-export async function decrementRollups(
-    client: PoolClient,
-    deltas: RollupDelta[],
-): Promise<void> {
-    if (deltas.length === 0) {
-        return;
-    }
-
-    const values = buildSqlValues(deltas);
-    const decrementsCte = `
-        WITH decrements (bucket_start, service, level, count) AS (
-            VALUES ${values.placeholders}
-        )
-    `;
-
-    await client.query(
-        `
-            ${decrementsCte}
-            UPDATE log_rollups AS rollup
-            SET count = rollup.count - decrements.count
-            FROM decrements
-            WHERE rollup.bucket_start = decrements.bucket_start
-              AND rollup.service = decrements.service
-              AND rollup.level = decrements.level
-        `,
-        values.parameters,
-    );
-
-    await client.query(
-        `
-            ${decrementsCte}
-            DELETE FROM log_rollups AS rollup
-            USING decrements
-            WHERE rollup.bucket_start = decrements.bucket_start
-              AND rollup.service = decrements.service
-              AND rollup.level = decrements.level
-              AND rollup.count <= 0
         `,
         values.parameters,
     );

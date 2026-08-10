@@ -1,0 +1,1 @@
+ALTER TABLE "log_rollups" DROP CONSTRAINT "log_rollups_pkey";

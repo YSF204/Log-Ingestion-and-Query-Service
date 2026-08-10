@@ -1,103 +1,28 @@
 # Log Ingestion and Query Service
 
-A high-throughput TypeScript API backed by PostgreSQL. It accepts structured log batches, supports filtered queries and cursor pagination, returns time-bucketed counts, and removes expired data.
+A TypeScript and PostgreSQL service for high-volume log ingestion, filtered search, cursor pagination, time-bucketed aggregation, and automatic retention.
 
 ## Quick start
 
 ```bash
-docker compose up 
+docker compose up
 ```
 
-The operational dashboard and API are available at `http://localhost:8080`. No environment file, authentication, separate frontend process, or manual migration step is required.
+The API and built-in Eventline dashboard are available at `http://localhost:8080`. No environment file, authentication, or manual migration is required.
 
 ```bash
 curl http://localhost:8080/health
 ```
 
-### Optional rate limiting
-
-The API includes a short-window `express-rate-limit` guard for `/logs` and `/logs/aggregate`. It is disabled by default so a plain `docker compose up` remains compatible with the required load generator. Enable it explicitly when running the service with:
-
-```env
-RATE_LIMIT_ENABLED=true
-RATE_LIMIT_WINDOW_MS=1000
-RATE_LIMIT_MAX=100
-```
-
-When enabled, the limit is applied per client IP and exceeded requests return `429` with an `error` body and standard rate-limit headers. `/health` and the dashboard assets are not rate limited.
-
-## Architecture
-
-PostgreSQL is the source of truth. The application is stateless and organized by responsibility:
-
-```text
-src/
-├── controllers/   HTTP request and response handling
-├── schemas/       Validation, query parsing, and cursor encoding
-├── services/      Ingestion, querying, aggregation, rollups, retention
-├── db/            Database client, schema, and shared SQL filters
-├── workers/       Scheduled retention cleanup
-├── routes/        Endpoint registration
-├── tests/         Unit and integration tests
-└── smoke/         Docker contract smoke test
-```
-
-Data flow:
-
-```text
-POST /logs
-  → validate each entry
-  → COPY valid rows into PostgreSQL
-  → update one-minute rollups
-  → commit one transaction
-
-GET /logs
-  → parse filters and cursor
-  → build parameterized SQL
-  → return timestamp/ID ordered page
-
-GET /logs/aggregate
-  → use rollups for the primary query
-  → use raw logs when q or attr.* requires exact filtering
-```
-
-The ingestion hot path remains small: one PostgreSQL `COPY` and one grouped rollup upsert per accepted batch.
-
-## Dashboard
-
-The built-in **Eventline** dashboard is enabled by default and served by the application container at `http://localhost:8080`. It is additive: all required API endpoints keep their exact paths and response contracts.
-
-Every value comes from the live service—there are no placeholder metrics. The dashboard provides:
-
-- An operational overview derived from time-bucketed aggregates, including event volume, current rate, error ratio, active services, previous-period comparison, severity distribution, and recent events
-- A log explorer with message, service, level, time-range, and arbitrary `attr.<key>` filters, cursor pagination, JSON export, and full event inspection
-- A batch-ingest console that sends the exact `POST /logs` format and displays per-entry acceptance and rejection feedback
-- Manual refresh, optional 15-second live refresh, light/dark appearances, keyboard search focus (`Ctrl/⌘ K`), mobile navigation, and reduced-motion/transparency support
-
-For frontend-only development, start the API and then run:
-
-```bash
-npm --prefix dashboard run dev
-```
-
-Vite proxies `/health` and `/logs` to `localhost:8080`. Production assets are built by `npm run build` and served from the same origin by Express.
-
 ## API
 
-### Health
+### `GET /health`
 
-```http
-GET /health
-```
+Returns `200` after the database is connected and migrations are complete.
 
-Returns `200` only after the database is connected and migrations have completed.
+### `POST /logs`
 
-### Ingest logs
-
-```http
-POST /logs
-Content-Type: application/json
-```
+Always accepts a batch:
 
 ```json
 {
@@ -107,71 +32,55 @@ Content-Type: application/json
       "level": "error",
       "service": "checkout",
       "message": "payment declined",
-      "attributes": {
-        "user_id": "42",
-        "region": "eu-west",
-        "retries": 3
-      }
+      "attributes": { "user_id": "42", "retries": 3 }
     }
   ]
 }
 ```
 
-Validation rules:
+Each entry is validated independently:
 
-- `timestamp`: valid ISO 8601 and no more than five minutes in the future
+- `timestamp`: valid ISO 8601, at most five minutes in the future
 - `level`: `debug`, `info`, `warn`, or `error`
 - `service` and `message`: non-empty strings
-- `attributes`: optional flat object containing string, number, or boolean values
+- `attributes`: optional flat object of strings, numbers, or booleans
 
-Entries are validated independently. Valid entries are stored even when other entries in the batch are rejected.
+Valid entries are stored even if others fail:
 
 ```json
 {
   "accepted": 9,
-  "rejected": [
-    { "index": 3, "reason": "invalid log entry" }
-  ]
+  "rejected": [{ "index": 3, "reason": "invalid log entry" }]
 }
 ```
 
-Returns `200` when at least one entry is accepted. Returns `400` for malformed JSON, invalid top-level structure, or a completely rejected batch.
+Returns `200` if at least one entry is accepted. Returns `400` for malformed JSON, an invalid top-level body, or a fully rejected batch.
 
-### Query logs
+### `GET /logs`
 
-```http
-GET /logs
-```
+All filters can be combined:
 
-| Parameter | Description |
+| Parameter | Meaning |
 |---|---|
 | `service` | Exact service match |
 | `level` | Exact level match |
-| `since` | Inclusive start timestamp |
-| `until` | Exclusive end timestamp |
-| `attr.<key>` | Attribute equality compared as text |
+| `since` / `until` | Inclusive start / exclusive end |
+| `attr.<key>` | Attribute equality as text |
 | `q` | Case-insensitive message substring |
 | `limit` | Default `100`, maximum `1000` |
 | `cursor` | Opaque cursor from the previous response |
 
-Results are ordered by timestamp descending and then ID descending.
+Results are ordered by timestamp and ID descending.
 
 ```json
-{
-  "logs": [],
-  "next_cursor": null
-}
+{ "logs": [], "next_cursor": null }
 ```
 
-Keep the same filters when requesting the next page. Invalid parameters return `400` as `{"error":"<description>"}`.
+Reuse the same filters with the next cursor. Invalid parameters return `400` as `{"error":"<description>"}`.
 
-### Aggregate logs
+### `GET /logs/aggregate`
 
-```http
-GET /logs/aggregate
-```
-
-Required parameters are `since`, `until`, and `bucket`. Supported buckets are `1m`, `5m`, `1h`, and `1d`. Optional `group_by` values are `service` and `level`. All normal log filters except pagination are also supported.
+Requires `since`, `until`, and `bucket`. Buckets may be `1m`, `5m`, `1h`, or `1d`. Optional `group_by` values are `service` and `level`. The normal filters (`service`, `level`, `attr.*`, and `q`) are also supported.
 
 ```json
 {
@@ -185,98 +94,89 @@ Required parameters are `since`, `until`, and `bucket`. Supported buckets are `1
 }
 ```
 
-Buckets are ordered by start time ascending. Empty buckets are omitted and `group` is `null` when `group_by` is absent.
+Buckets are ordered by start time. Empty buckets are omitted. `group` is `null` without `group_by`.
 
-## Database design
+## Design
 
-### Logs
+PostgreSQL is the source of truth and the application is stateless.
 
-The `logs` table contains:
+```text
+POST /logs          validate → COPY logs → append rollup deltas → commit
+GET /logs           parse filters/cursor → parameterized SQL → return page
+GET /logs/aggregate use rollups, or raw logs for q and attr.* filters
+```
+
+The `logs` table uses:
 
 | Column | Type | Purpose |
 |---|---|---|
 | `id` | `bigint identity` | Unique ID and pagination tie-breaker |
 | `timestamp` | `timestamptz` | Event time and retention key |
 | `level` | `text` | Severity |
-| `service` | `text` | Producing service |
-| `message` | `text` | Searchable message |
+| `service` | `text` | Source service |
+| `message` | `text` | Log message |
 | `attributes` | `jsonb` | Arbitrary flat attributes |
 
-Indexes match the main query patterns:
+Indexes cover `timestamp`, `(service, timestamp)`, and `(level, timestamp)`. JSONB keeps attributes flexible; `attributes ->> key` provides the required text comparison. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
 
-- `timestamp`
-- `(service, timestamp)`
-- `(level, timestamp)`
-
-### Attributes
-
-JSONB allows arbitrary attribute keys without schema changes. Filters use `attributes ->> key`, so strings, numbers, and booleans are compared using their text representation as required by the API contract.
-
-SQL values are always parameterized. Bucket sizes and grouping columns come from validated allowlists.
-
-### Rollups
-
-`log_rollups` stores one-minute counts keyed by `(bucket_start, service, level)`. Larger buckets are calculated from these rows. This keeps the primary aggregation query fast while ingestion is active.
-
-Queries containing message or attribute filters use raw logs because those dimensions are not present in the rollup table.
+`log_rollups` stores append-only one-minute count deltas by bucket, service, and level. This avoids hot-row update contention during ingestion. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
 
 ## Retention
 
-`RETENTION_DAYS` defaults to `30`. Every minute the worker deletes at most 10,000 expired rows using `FOR UPDATE SKIP LOCKED`.
-
-The same transaction decrements the matching rollup counts. This keeps raw queries and aggregate queries consistent without a long-running unbounded delete.
+Logs are retained for 30 days by default. Every minute, the worker deletes up to 10,000 expired rows with `FOR UPDATE SKIP LOCKED` and appends matching negative rollup deltas in the same transaction.
 
 ```bash
 RETENTION_DAYS=7 docker compose up --build
 ```
 
+## Dashboard and configuration
+
+The Eventline dashboard is the only optional product feature. It is enabled by default, needs no configuration, and does not change the required API. It provides live metrics, log filtering and inspection, JSON export, and a batch-ingest console.
+
+For frontend development:
+
+```bash
+npm --prefix dashboard run dev
+```
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `RETENTION_DAYS` | `30` | Log retention period |
+| `DB_POOL_MAX` | `20` | Database connection pool size |
+
+Authentication, multi-tenancy, active rate limiting, and alerting are not implemented. Plain `docker compose up` always starts the unauthenticated core service with no quotas.
+
 ## Performance
 
-Measured on 2026-08-08 with the required limits:
+Measured on 2026-08-10 under the required limits:
 
-- Application: 0.5 CPU, 256 MiB RAM
-- PostgreSQL 16: 1 CPU, 1 GiB RAM
-- Batch size: 500
+- Application: 0.5 CPU and 256 MiB RAM
+- PostgreSQL 16: 1 CPU and 1 GiB RAM
+- Dataset after test: 2,251,500 rows
+- Batch size: 100
+- Duration: 30 seconds
 - Concurrent aggregation: 1 request/second
-- Dataset: 1,050,000 newly ingested rows
 
 | Result | Measured value |
 |---|---:|
 | Ingestion rate | 15,000 logs/second |
-| Rejected logs | 0 |
+| Accepted / rejected | 450,000 / 0 |
 | Dropped iterations | 0 |
-| HTTP failures | 0% |
-| Overall HTTP p95 | 262.26 ms |
-| Aggregation p95 | 100.37 ms |
-| Application peak memory | 92.72 MiB |
-| PostgreSQL peak memory | 372.4 MiB |
+| Ingestion HTTP failures | 0% |
+| Overall HTTP p95 | 38.13 ms |
+| Aggregation p95 | 24.80 ms |
+| Application memory | 71.66 MiB |
+| PostgreSQL memory | 405.8 MiB |
 
-The main bottleneck was batch size. A batch size of 100 required 150 transactions/second and reached about 10.4k logs/second. Increasing the batch to 500 reduced that to 30 transactions/second and sustained the target without dropped work.
+The main bottleneck was synchronous rollup updates on the current minute. Append-only deltas removed that lock contention and kept aggregation well under one second during ingestion.
 
-Run the default workload:
+Run the default load test:
 
 ```bash
 npm run test:load
 ```
 
-Useful overrides:
-
-| Variable | Default |
-|---|---:|
-| `LOAD_BATCH_SIZE` | `500` |
-| `LOAD_LOGS_PER_SECOND` | `15000` |
-| `LOAD_DURATION` | `30s` |
-| `LOAD_MODE` | `both` |
-| `LOAD_AGGREGATION_RATE` | `1` |
-
-## Configuration
-
-| Variable | Default | Purpose |
-|---|---:|---|
-| `RETENTION_DAYS` | `30` | Log retention period |
-| `DB_POOL_MAX` | `20` | PostgreSQL connection pool limit |
-
-The dashboard is the only optional product feature currently implemented. It is enabled by default, requires no environment variables, and does not alter API behavior. Authentication, multi-tenancy, rate limiting, and alerting are not implemented. Therefore, plain `docker compose up` always starts the required unauthenticated core service with no quotas.
+Overrides: `LOAD_BATCH_SIZE` (500), `LOAD_LOGS_PER_SECOND` (15000), `LOAD_DURATION` (30s), `LOAD_MODE` (both), and `LOAD_AGGREGATION_RATE` (1).
 
 ## Tests and CI
 
@@ -289,14 +189,12 @@ npm test
 npm run test:smoke
 ```
 
-The 47-test suite covers validation, partial batch acceptance, filters, time boundaries, cursor pagination, aggregation, and retention/rollup consistency.
-
-GitHub Actions runs the type-check, migrations, tests, Docker build, and a contract smoke test against a zero-configuration Compose stack.
+The test suite covers validation, partial batch acceptance, filters, time boundaries, pagination, aggregation, and retention consistency. GitHub Actions builds the project, runs migrations and tests, and checks the API contract against a zero-configuration Compose stack.
 
 ## Known limitations
 
-- Maximum throughput depends on clients sending sufficiently large batches.
-- Message and arbitrary-attribute searches do not have specialized indexes.
-- Filtered aggregations using `q` or `attr.*` scan raw matching rows.
+- Rollup deltas are not compacted in the background.
+- Message and arbitrary-attribute searches have no specialized indexes.
+- Aggregations with `q` or `attr.*` scan matching raw rows.
 - Retention is row-batched rather than partition-based.
 - Cursors are encoded but not signed or tied to a filter set.

@@ -11,7 +11,9 @@ const app = express();
 
 app.use(express.json({ limit: '1mb' }));
 app.get('/health', healthCheck);
-app.use('/logs', createRateLimiter(), logRoutes);
+// app.use('/logs', createRateLimiter(), logRoutes);
+app.use('/logs', logRoutes);
+
 
 const dashboardPath = path.join(process.cwd(), 'dashboard', 'dist');
 

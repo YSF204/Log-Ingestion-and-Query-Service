@@ -3,7 +3,6 @@ import {
     index,
     jsonb,
     pgTable,
-    primaryKey,
     text,
     timestamp,
 } from 'drizzle-orm/pg-core';
@@ -53,10 +52,6 @@ export const logRollups = pgTable(
         count: bigint('count', { mode: 'number' }).notNull().default(0),
     },
     (table) => [
-        primaryKey({
-            name: 'log_rollups_pkey',
-            columns: [table.bucketStart, table.service, table.level],
-        }),
         index('log_rollups_bucket_idx').on(table.bucketStart),
     ],
 );

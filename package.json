@@ -14,7 +14,7 @@
     "db:migrate": "drizzle-kit migrate",
     "start": "tsx src/server.ts",
     "test:smoke": "vitest run src/smoke/contract-smoke.test.ts",
-    "test:load": "docker compose --profile load-test up -d --build db app && docker compose --profile load-test run --rm --no-deps k6"
+    "test:load": "docker compose --profile load-test up -d --build --wait --wait-timeout 60 db app && docker compose --profile load-test run --rm --no-deps k6"
   },
   "keywords": [],
   "author": "",
