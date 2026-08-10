@@ -18,6 +18,9 @@ type SqlValues = {
     parameters: Array<Date | string | number>;
 };
 
+const ROLLUP_SHARDS = 16;
+let nextRollupShard = 0;
+
 export function groupRollupDeltas(entries: RollupEvent[]): RollupDelta[] {
     const grouped = new Map<string, RollupDelta>();
 
@@ -75,13 +78,19 @@ async function insertRollupDeltas(
     }
 
     const values = buildSqlValues(deltas);
+    const shard = nextRollupShard;
+    nextRollupShard = (nextRollupShard + 1) % ROLLUP_SHARDS;
 
     await client.query(
         `
-            INSERT INTO log_rollups (bucket_start, service, level, count)
+            INSERT INTO log_rollups (
+                bucket_start, service, level, shard, count
+            )
             VALUES ${values.placeholders}
+            ON CONFLICT (bucket_start, service, level, shard)
+            DO UPDATE SET count = log_rollups.count + EXCLUDED.count
         `,
-        values.parameters,
+        [shard, ...values.parameters],
     );
 }
 
@@ -95,10 +104,10 @@ function buildSqlValues(deltas: RollupDelta[]): SqlValues {
     const parameters: Array<Date | string | number> = [];
 
     deltas.forEach((delta, index) => {
-        const offset = index * 4;
+        const offset = index * 4 + 1;
         placeholders.push(
             `($${offset + 1}::timestamptz, $${offset + 2}::text, ` +
-            `$${offset + 3}::text, $${offset + 4}::bigint)`,
+            `$${offset + 3}::text, $1::integer, $${offset + 4}::bigint)`,
         );
         parameters.push(
             delta.bucketStart,

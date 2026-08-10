@@ -1,8 +1,10 @@
 import {
     bigint,
     index,
+    integer,
     jsonb,
     pgTable,
+    primaryKey,
     text,
     timestamp,
 } from 'drizzle-orm/pg-core';
@@ -28,14 +30,24 @@ export const logs = pgTable(
             .default({}),
     },
     (table) => [
-        index('logs_timestamp_idx').on(table.timestamp),
-        index('logs_service_timestamp_idx').on(
+        index('logs_timestamp_id_idx').on(table.timestamp, table.id),
+        index('logs_service_timestamp_id_idx').on(
             table.service,
             table.timestamp,
+            table.id,
         ),
-        index('logs_level_timestamp_idx').on(
+        index('logs_level_timestamp_id_idx').on(
             table.level,
             table.timestamp,
+            table.id,
+        ),
+        index('logs_message_trgm_idx').using(
+            'gin',
+            table.message.asc().op('gin_trgm_ops'),
+        ),
+        index('logs_attributes_gin_idx').using(
+            'gin',
+            table.attributes.asc().op('jsonb_ops'),
         ),
     ],
 );
@@ -49,9 +61,19 @@ export const logRollups = pgTable(
         }).notNull(),
         service: text('service').notNull(),
         level: text('level').notNull(),
+        shard: integer('shard').notNull().default(0),
         count: bigint('count', { mode: 'number' }).notNull().default(0),
     },
     (table) => [
+        primaryKey({
+            name: 'log_rollups_pkey',
+            columns: [
+                table.bucketStart,
+                table.service,
+                table.level,
+                table.shard,
+            ],
+        }),
         index('log_rollups_bucket_idx').on(table.bucketStart),
     ],
 );

@@ -117,13 +117,13 @@ The `logs` table uses:
 | `message` | `text` | Log message |
 | `attributes` | `jsonb` | Arbitrary flat attributes |
 
-Indexes cover `timestamp`, `(service, timestamp)`, and `(level, timestamp)`. JSONB keeps attributes flexible; `attributes ->> key` provides the required text comparison. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
+Indexes cover `(timestamp, id)`, `(service, timestamp, id)`, and `(level, timestamp, id)` for deterministic pagination. Trigram and JSONB GIN indexes accelerate message and attribute filters. JSONB keeps attributes flexible, and a final `attributes ->> key` check preserves the required text comparison. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
 
-`log_rollups` stores append-only one-minute count deltas by bucket, service, and level. This avoids hot-row update contention during ingestion. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
+`log_rollups` stores one-minute counts by bucket, service, and level across 16 write shards. This bounds rollup growth while avoiding a single hot row during concurrent ingestion. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
 
 ## Retention
 
-Logs are retained for 30 days by default. Every minute, the worker deletes up to 10,000 expired rows with `FOR UPDATE SKIP LOCKED` and appends matching negative rollup deltas in the same transaction.
+Logs are retained for 30 days by default. Every minute, the worker deletes up to 10,000 expired rows with `FOR UPDATE SKIP LOCKED` and applies matching negative rollup counts in the same transaction.
 
 ```bash
 RETENTION_DAYS=7 docker compose up --build
@@ -168,7 +168,7 @@ Measured on 2026-08-10 under the required limits:
 | Application memory | 71.66 MiB |
 | PostgreSQL memory | 405.8 MiB |
 
-The main bottleneck was synchronous rollup updates on the current minute. Append-only deltas removed that lock contention and kept aggregation well under one second during ingestion.
+The main bottleneck was synchronous rollup updates on one current-minute row. Sharding each rollup key spreads that contention while keeping the table bounded and aggregation well under one second during ingestion.
 
 Run the default load test:
 
@@ -193,8 +193,6 @@ The test suite covers validation, partial batch acceptance, filters, time bounda
 
 ## Known limitations
 
-- Rollup deltas are not compacted in the background.
-- Message and arbitrary-attribute searches have no specialized indexes.
-- Aggregations with `q` or `attr.*` scan matching raw rows.
+- Aggregations with `q` or `attr.*` still group matching raw rows after index filtering.
 - Retention is row-batched rather than partition-based.
 - Cursors are encoded but not signed or tied to a filter set.
