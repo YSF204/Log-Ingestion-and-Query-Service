@@ -75,7 +75,19 @@ jobs:
         run: npm ci
 
       - name: Start the zero-configuration stack
-        run: docker compose up --detach --build db app
+        run: |
+          for attempt in 1 2 3; do
+            if docker compose up --detach --build db app; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "docker compose up failed (attempt $attempt/3); retrying in 5 seconds..."
+              docker compose down --volumes || true
+              sleep 5
+            fi
+          done
+          echo "docker compose up failed after 3 attempts"
+          exit 1
 
       - name: Run required-contract smoke test
         run: npm run test:smoke
