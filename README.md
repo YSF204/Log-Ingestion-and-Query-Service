@@ -117,9 +117,9 @@ The `logs` table uses:
 | `message` | `text` | Log message |
 | `attributes` | `jsonb` | Arbitrary flat attributes |
 
-Indexes cover `(timestamp, id)`, `(service, timestamp, id)`, and `(level, timestamp, id)` for deterministic pagination. Trigram and JSONB GIN indexes accelerate message and attribute filters. JSONB keeps attributes flexible, and a final `attributes ->> key` check preserves the required text comparison. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
+Indexes cover `(timestamp, id)`, `(service, timestamp, id)`, and `(level, timestamp, id)` for deterministic pagination and the high-frequency filters. JSONB keeps attributes flexible, and `attributes ->> key` preserves the required text comparison. Message and arbitrary-attribute filters intentionally use the time index plus residual filtering: maintaining GIN indexes on every ingested row reduced sustained throughput below the required target. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
 
-`log_rollups` stores one-minute counts by bucket, service, and level across 16 write shards. This bounds rollup growth while avoiding a single hot row during concurrent ingestion. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
+`log_rollups` stores append-only one-minute count deltas by bucket, service, and level. This removes hot-row update contention from the ingestion transaction. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
 
 ## Retention
 
@@ -168,7 +168,7 @@ Measured on 2026-08-10 under the required limits:
 | Application memory | 71.66 MiB |
 | PostgreSQL memory | 405.8 MiB |
 
-The main bottleneck was synchronous rollup updates on one current-minute row. Sharding each rollup key spreads that contention while keeping the table bounded and aggregation well under one second during ingestion.
+The main bottleneck was synchronous rollup updates on one current-minute row. Append-only deltas remove that contention and keep aggregation well under one second during ingestion. GIN search indexes were also tested, but their pending-list flushes caused severe throughput stalls under the one-CPU database limit, so they are not enabled.
 
 Run the default load test:
 
@@ -193,6 +193,8 @@ The test suite covers validation, partial batch acceptance, filters, time bounda
 
 ## Known limitations
 
-- Aggregations with `q` or `attr.*` still group matching raw rows after index filtering.
+- Message and arbitrary-attribute searches can become slower over broad time ranges; provide `since` and `until` whenever possible.
+- Aggregations with `q` or `attr.*` group matching raw rows rather than using rollups.
+- Rollup deltas are not compacted in the background.
 - Retention is row-batched rather than partition-based.
 - Cursors are encoded but not signed or tied to a filter set.

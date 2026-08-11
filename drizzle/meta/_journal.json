@@ -29,6 +29,13 @@
       "when": 1786388713309,
       "tag": "0003_query_performance",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786393510817,
+      "tag": "0004_restore_ingestion_throughput",
+      "breakpoints": true
     }
   ]
 }

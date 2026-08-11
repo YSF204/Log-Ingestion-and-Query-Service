@@ -1,10 +1,8 @@
 import {
-    and,
     eq,
     gte,
     ilike,
     lt,
-    or,
     sql,
     type SQL,
 } from 'drizzle-orm';
@@ -46,32 +44,9 @@ export function buildLogFilterConditions(query: LogFilters): SQL[] {
     }
 
     for (const attribute of query.attributes) {
-        const indexedValues: Array<string | number | boolean> = [
-            attribute.value,
-        ];
-        try {
-            const parsedValue: unknown = JSON.parse(attribute.value);
-
-            if (
-                typeof parsedValue === 'boolean' ||
-                (typeof parsedValue === 'number' &&
-                    Number.isFinite(parsedValue))
-            ) {
-                indexedValues.push(parsedValue);
-            }
-        } catch {
-            // The attribute may simply be a non-JSON string.
-        }
-
-        const indexedConditions = indexedValues.map((value) => sql`
-            ${logs.attributes} @>
-            ${JSON.stringify({ [attribute.key]: value })}::jsonb
-        `);
-
-        conditions.push(and(
-            or(...indexedConditions),
+        conditions.push(
             sql`${logs.attributes} ->> ${attribute.key} = ${attribute.value}`,
-        )!);
+        );
     }
 
     return conditions;
