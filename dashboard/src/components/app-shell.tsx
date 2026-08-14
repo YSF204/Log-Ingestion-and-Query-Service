@@ -229,5 +229,3 @@ export function AppShell({ children }: PropsWithChildren) {
     </DashboardShellContext.Provider>
   )
 }
-
-export default AppShell

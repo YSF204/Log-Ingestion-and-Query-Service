@@ -1,34 +1,26 @@
 # Eventline dashboard
 
-The React/Vite dashboard for the Log Ingestion and Query Service. Its Overview, Explore, and Ingest views use the real `/health`, `/logs`, and `/logs/aggregate` endpoints.
+The dashboard is the React/Vite client for the log service. It uses the required health, ingestion, query, and aggregation endpoints.
 
-## UI structure
+## Structure
 
-The dashboard is configured for TypeScript, Tailwind CSS v4, and the shadcn CLI. The `@` alias resolves to `dashboard/src`.
-
-- Reusable shadcn-style components: `src/components/ui`
-- Global styles and Tailwind entry point: `src/index.css`
-- Product-level components: `src/components`
-- shadcn configuration: `components.json`
-
-Keeping reusable primitives in `src/components/ui` gives the shadcn CLI and application imports one predictable location. Add future primitives from the `dashboard` directory with:
-
-```bash
-npx shadcn@latest add <component>
-```
-
-The integrated entry component is `src/components/ui/efferd-dashboard-2.tsx`; `src/demo.tsx` mounts it as the application demo.
+- `src/api.ts`: API types and HTTP client
+- `src/App.tsx`: application composition root
+- `src/components`: reusable dashboard components
+- `src/views`: Overview, Explore, and Ingest screens
+- `src/dashboard-types.ts`: dashboard state types
+- `src/utils.ts`: formatting and filter helpers
+- `src/index.css` and `src/App.css`: global and product styles
 
 ## Development
 
-Start the API at `localhost:8080`, then run from the repository root:
+Start the API on port `8080`, then run:
 
 ```bash
-npm install
 npm --prefix dashboard run dev
 ```
 
-Open `http://localhost:5173`. Vite proxies API requests to port 8080.
+Vite serves the dashboard on `http://localhost:5173` and proxies API requests to the service.
 
 ## Verification
 
@@ -37,4 +29,4 @@ npm --prefix dashboard run build
 npm --prefix dashboard run lint
 ```
 
-The production build is emitted to `dashboard/dist` and served by Express at `http://localhost:8080`.
+The production build is emitted to `dashboard/dist` and served by Express.

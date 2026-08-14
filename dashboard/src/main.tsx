@@ -4,10 +4,10 @@ import '@fontsource/roboto/latin-400.css'
 import '@fontsource/roboto/latin-500.css'
 import '@fontsource/roboto/latin-700.css'
 import './index.css'
-import Demo from './demo.tsx'
+import App from './App.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <Demo />
+    <App />
   </StrictMode>,
 )

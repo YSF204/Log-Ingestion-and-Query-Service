@@ -1896,7 +1896,6 @@ button.filter-chip { font-weight: 540; }
   }
 }
 
-/* Readability pass: Roboto sizing and denser operational contrast. */
 .brand strong,
 .mobile-brand strong {
   font-size: 16px;
