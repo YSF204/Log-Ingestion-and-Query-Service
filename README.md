@@ -101,10 +101,21 @@ Buckets are ordered by start time. Empty buckets are omitted. `group` is `null` 
 PostgreSQL is the source of truth and the application is stateless.
 
 ```text
-POST /logs          validate → COPY logs → append rollup deltas → commit
-GET /logs           parse filters/cursor → parameterized SQL → return page
+POST /logs          validate -> COPY logs -> append rollup deltas -> commit
+GET /logs           parse filters/cursor -> parameterized SQL -> return page
 GET /logs/aggregate use rollups, or raw logs for q and attr.* filters
 ```
+
+The backend follows a layered structure:
+
+| Directory | Responsibility |
+|---|---|
+| `domain` | Database-independent log and rollup types and rules |
+| `validation` and `schemas` | Request validation and query parsing |
+| `repositories` | PostgreSQL reads, writes, aggregation, and maintenance |
+| `services` | Use-case orchestration and ingestion queueing |
+| `controllers` and `routes` | HTTP request and response handling |
+| `workers` | Scheduled retention execution |
 
 The `logs` table uses:
 
@@ -117,7 +128,7 @@ The `logs` table uses:
 | `message` | `text` | Log message |
 | `attributes` | `jsonb` | Arbitrary flat attributes |
 
-Indexes cover `(timestamp, id)`, `(service, timestamp, id)`, and `(level, timestamp, id)` for deterministic pagination and the high-frequency filters. JSONB keeps attributes flexible, and `attributes ->> key` preserves the required text comparison. Message and arbitrary-attribute filters intentionally use the time index plus residual filtering: maintaining GIN indexes on every ingested row reduced sustained throughput below the required target. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
+Indexes cover `(timestamp, id)` and `(service, timestamp, id)` for deterministic pagination and the high-frequency filters. Level filtering uses the timestamp/service access paths plus a residual predicate because level has only four values and its standalone index added write cost without much selectivity. JSONB keeps attributes flexible. A compact `jsonb_path_ops` GIN index finds attribute candidates, and a final `attributes ->> key` predicate preserves the required text comparison. Its buffered pending list amortizes index maintenance so forced GIN flushes do not stall ingestion. Message search uses the time index plus residual filtering because a trigram index added too much write amplification. SQL values are parameterized, while bucket sizes and grouping columns use validated allowlists.
 
 `log_rollups` stores append-only one-minute count deltas by bucket, service, and level. This removes hot-row update contention from the ingestion transaction. Larger buckets sum these rows. Queries with `q` or `attr.*` use raw logs because those values are not in the rollup.
 
@@ -143,32 +154,38 @@ npm --prefix dashboard run dev
 |---|---:|---|
 | `RETENTION_DAYS` | `30` | Log retention period |
 | `DB_POOL_MAX` | `20` | Database connection pool size |
+| `DB_READ_POOL_MAX` | `4` | Reserved database connections for query and aggregation traffic |
+| `INGEST_COALESCE_MS` | `50` | Maximum wait in milliseconds for combining concurrent ingest requests |
+| `INGEST_MAX_COALESCED_LOGS` | `10000` | Maximum logs written in one coalesced transaction |
+| `GIN_CLEANUP_IDLE_MS` | `2000` | Idle time before merging buffered attribute-index entries |
 
 Authentication, multi-tenancy, active rate limiting, and alerting are not implemented. Plain `docker compose up` always starts the unauthenticated core service with no quotas.
 
 ## Performance
 
-Measured on 2026-08-10 under the required limits:
+Measured on 2026-08-13 under the required limits:
 
 - Application: 0.5 CPU and 256 MiB RAM
 - PostgreSQL 16: 1 CPU and 1 GiB RAM
-- Dataset after test: 2,251,500 rows
-- Batch size: 100
-- Duration: 30 seconds
+- Dataset contained 3.6 million rows before the sustained test
+- Batch size: 500
+- Duration: 120 seconds
 - Concurrent aggregation: 1 request/second
 
 | Result | Measured value |
 |---|---:|
-| Ingestion rate | 15,000 logs/second |
-| Accepted / rejected | 450,000 / 0 |
+| Ingestion rate | 14,986 logs/second over total wall time; all 1,800,500 scheduled logs accepted |
+| Accepted / rejected | 1,800,500 / 0 |
 | Dropped iterations | 0 |
 | Ingestion HTTP failures | 0% |
-| Overall HTTP p95 | 38.13 ms |
-| Aggregation p95 | 24.80 ms |
-| Application memory | 71.66 MiB |
-| PostgreSQL memory | 405.8 MiB |
+| Overall HTTP p95 | 707.22 ms |
+| Aggregation p95 | 242.59 ms |
 
-The main bottleneck was synchronous rollup updates on one current-minute row. Append-only deltas remove that contention and keep aggregation well under one second during ingestion. GIN search indexes were also tested, but their pending-list flushes caused severe throughput stalls under the one-CPU database limit, so they are not enabled.
+A separate 30,000 logs/second headroom probe against more than 7.7 million existing rows completed 765,000 logs at 20,842 logs/second over total wall time. It did not meet the full 30,000 target (271 iterations were dropped), but demonstrates useful throughput above the required 15,000 baseline without increasing the container limits.
+
+The main bottlenecks were concurrent small write transactions, application-side per-entry processing, synchronous contention around hot data, and forced GIN pending-list flushes. The service uses a single-pass validator and PostgreSQL text COPY, serializes and coalesces concurrent requests into bounded transactions, stores append-only rollup deltas, and buffers attribute-index maintenance during sustained bursts. After ingestion has been idle for two seconds, the application asks PostgreSQL to merge the pending GIN entries. The message trigram index remains disabled because its write cost was not justified under the one-CPU database limit.
+
+The Compose PostgreSQL service uses an 8 GiB WAL budget, compressed WAL, a 64 MiB WAL buffer, a longer checkpoint interval, and write-oriented background-writer settings. This prevents frequent forced checkpoints and backend WAL-buffer flushes from pausing ingestion and aggregation under sustained write load. The log identity sequence caches 1,000 values; IDs remain unique but may contain gaps after a restart.
 
 Run the default load test:
 
@@ -176,7 +193,7 @@ Run the default load test:
 npm run test:load
 ```
 
-Overrides: `LOAD_BATCH_SIZE` (500), `LOAD_LOGS_PER_SECOND` (15000), `LOAD_DURATION` (30s), `LOAD_MODE` (both), and `LOAD_AGGREGATION_RATE` (1).
+Overrides: `LOAD_BATCH_SIZE` (500), `LOAD_LOGS_PER_SECOND` (15000), `LOAD_DURATION` (120s), `LOAD_MODE` (both), and `LOAD_AGGREGATION_RATE` (1). Set `LOAD_RATE_STAGES=15000:30s,22500:60s,30000:60s` to run the staged headroom profile; when provided, it replaces the fixed ingestion rate and duration.
 
 ## Tests and CI
 
