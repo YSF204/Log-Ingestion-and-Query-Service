@@ -7,6 +7,7 @@ const BASE_URL = __ENV.BASE_URL || 'http://app:8080';
 const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 100);
 const LOGS_PER_SECOND = Number(__ENV.LOGS_PER_SECOND || 15_000);
 const DURATION = __ENV.DURATION || '30s';
+const RATE_STAGES = parseRateStages(__ENV.LOAD_RATE_STAGES);
 const PRE_ALLOCATED_VUS = Number(__ENV.PRE_ALLOCATED_VUS || 100);
 const MAX_VUS = Number(__ENV.MAX_VUS || 500);
 const AGGREGATION_WINDOW_MINUTES = Number(
@@ -45,10 +46,18 @@ if (LOAD_MODE !== 'ingestion') {
     );
 }
 
-if (LOGS_PER_SECOND % BATCH_SIZE !== 0) {
+if (RATE_STAGES.length === 0 && LOGS_PER_SECOND % BATCH_SIZE !== 0) {
     throw new Error(
         'LOGS_PER_SECOND must be divisible by BATCH_SIZE so the target rate is exact',
     );
+}
+
+for (const stage of RATE_STAGES) {
+    if (stage.logsPerSecond % BATCH_SIZE !== 0) {
+        throw new Error(
+            `stage rate ${stage.logsPerSecond} must be divisible by BATCH_SIZE`,
+        );
+    }
 }
 
 if (MAX_VUS < PRE_ALLOCATED_VUS) {
@@ -56,6 +65,12 @@ if (MAX_VUS < PRE_ALLOCATED_VUS) {
 }
 
 const REQUESTS_PER_SECOND = LOGS_PER_SECOND / BATCH_SIZE;
+const TEST_DURATION = RATE_STAGES.length === 0
+    ? DURATION
+    : `${RATE_STAGES.reduce(
+        (total, stage) => total + stage.durationMilliseconds,
+        0,
+    )}ms`;
 const INGESTION_ENABLED =
     LOAD_MODE === 'ingestion' || LOAD_MODE === 'both';
 const AGGREGATION_ENABLED =
@@ -68,23 +83,28 @@ const scenarios = {};
 const thresholds = {};
 
 if (INGESTION_ENABLED) {
-    scenarios.ingestion = {
-        executor: 'constant-arrival-rate',
-        exec: 'ingestLogs',
-        rate: REQUESTS_PER_SECOND,
-        timeUnit: '1s',
-        duration: DURATION,
-        preAllocatedVUs: PRE_ALLOCATED_VUS,
-        maxVUs: MAX_VUS,
-        gracefulStop: '10s',
-        tags: {
-            workload: 'ingestion',
-        },
-    };
+    if (RATE_STAGES.length === 0) {
+        addIngestionScenario(
+            'ingestion',
+            REQUESTS_PER_SECOND,
+            DURATION,
+            undefined,
+        );
+    } else {
+        let startMilliseconds = 0;
 
-    thresholds['http_req_failed{scenario:ingestion}'] = ['rate==0'];
-    thresholds['checks{scenario:ingestion}'] = ['rate==1'];
-    thresholds['dropped_iterations{scenario:ingestion}'] = ['count==0'];
+        RATE_STAGES.forEach((stage, index) => {
+            addIngestionScenario(
+                `ingestion_stage_${index + 1}`,
+                stage.logsPerSecond / BATCH_SIZE,
+                stage.duration,
+                `${startMilliseconds}ms`,
+                stage.logsPerSecond,
+            );
+            startMilliseconds += stage.durationMilliseconds;
+        });
+    }
+
     thresholds.rejected_logs = ['count==0'];
 }
 
@@ -94,7 +114,7 @@ if (AGGREGATION_ENABLED) {
         exec: 'aggregateLogs',
         rate: AGGREGATION_RATE,
         timeUnit: '1s',
-        duration: DURATION,
+        duration: TEST_DURATION,
         preAllocatedVUs: 10,
         maxVUs: 50,
         gracefulStop: '10s',
@@ -114,6 +134,77 @@ export const options = {
     scenarios,
     thresholds,
 };
+
+function addIngestionScenario(
+    name,
+    rate,
+    duration,
+    startTime,
+    targetLogsPerSecond = LOGS_PER_SECOND,
+) {
+    scenarios[name] = {
+        executor: 'constant-arrival-rate',
+        exec: 'ingestLogs',
+        rate,
+        timeUnit: '1s',
+        duration,
+        preAllocatedVUs: PRE_ALLOCATED_VUS,
+        maxVUs: MAX_VUS,
+        gracefulStop: '10s',
+        tags: {
+            workload: 'ingestion',
+            target_logs_per_second: String(targetLogsPerSecond),
+        },
+    };
+
+    if (startTime !== undefined) {
+        scenarios[name].startTime = startTime;
+    }
+
+    thresholds[`http_req_failed{scenario:${name}}`] = ['rate==0'];
+    thresholds[`checks{scenario:${name}}`] = ['rate==1'];
+    thresholds[`dropped_iterations{scenario:${name}}`] = ['count==0'];
+}
+
+function parseRateStages(value) {
+    if (value === undefined || value.trim() === '') {
+        return [];
+    }
+
+    return value.split(',').map((rawStage) => {
+        const match = rawStage.trim().match(
+            /^(\d+):(\d+(?:\.\d+)?)(ms|s|m|h)$/,
+        );
+
+        if (match === null) {
+            throw new Error(
+                'LOAD_RATE_STAGES must look like 15000:30s,22500:60s,30000:60s',
+            );
+        }
+
+        const logsPerSecond = Number(match[1]);
+        const durationValue = Number(match[2]);
+        const durationUnit = match[3];
+        const unitMilliseconds = {
+            ms: 1,
+            s: 1_000,
+            m: 60_000,
+            h: 3_600_000,
+        }[durationUnit];
+
+        requirePositiveInteger('stage logs per second', logsPerSecond);
+
+        if (durationValue <= 0) {
+            throw new Error('stage duration must be positive');
+        }
+
+        return {
+            logsPerSecond,
+            duration: `${durationValue}${durationUnit}`,
+            durationMilliseconds: durationValue * unitMilliseconds,
+        };
+    });
+}
 
 const levels = ['debug', 'info', 'warn', 'error'];
 const services = [
@@ -185,13 +276,7 @@ export function ingestLogs(data) {
         },
     );
 
-    let body = null;
-
-    try {
-        body = response.json();
-    } catch {
-        // The checks below report an invalid response body.
-    }
+    const body = readResponseBody(response);
 
     const responseIsValid = check(response, {
         'ingestion returns 200': (result) => result.status === 200,
@@ -232,16 +317,18 @@ export function aggregateLogs(data) {
         },
     );
 
-    let body = null;
-
-    try {
-        body = response.json();
-    } catch {
-        // The checks below report an invalid response body.
-    }
+    const body = readResponseBody(response);
 
     check(response, {
         'aggregation returns 200': (result) => result.status === 200,
         'aggregation returns buckets': () => Array.isArray(body?.buckets),
     });
+}
+
+function readResponseBody(response) {
+    try {
+        return response.json();
+    } catch {
+        return null;
+    }
 }

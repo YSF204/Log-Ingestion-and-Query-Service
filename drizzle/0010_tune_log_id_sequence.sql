@@ -1,0 +1,1 @@
+ALTER SEQUENCE "logs_id_seq" CACHE 1000;

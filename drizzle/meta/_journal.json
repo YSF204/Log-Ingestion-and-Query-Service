@@ -36,6 +36,62 @@
       "when": 1786393510817,
       "tag": "0004_restore_ingestion_throughput",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786636800000,
+      "tag": "0005_query_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1786636860000,
+      "tag": "0006_remove_write_heavy_search_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1786636920000,
+      "tag": "0007_remove_low_selectivity_level_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1786636980000,
+      "tag": "0008_add_buffered_attribute_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786637040000,
+      "tag": "0009_remove_redundant_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786637100000,
+      "tag": "0010_tune_log_id_sequence",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786637160000,
+      "tag": "0011_expand_attribute_pending_list",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786637220000,
+      "tag": "0012_tune_append_only_maintenance",
+      "breakpoints": true
     }
   ]
 }
