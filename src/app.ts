@@ -4,16 +4,13 @@ import path from 'node:path';
 
 import { healthCheck } from './controllers/health.controller';
 import { errorHandler } from './middleware/error-handler';
-import { createRateLimiter } from './middleware/rate-limit';
 import logRoutes from './routes/log.routes';
 
 const app = express();
 
 app.use(express.json({ limit: '1mb' }));
 app.get('/health', healthCheck);
-// app.use('/logs', createRateLimiter(), logRoutes);
 app.use('/logs', logRoutes);
-
 
 const dashboardPath = path.join(process.cwd(), 'dashboard', 'dist');
 

@@ -42,9 +42,7 @@ async function waitForHealth(): Promise<void> {
             if (response.ok) {
                 return;
             }
-        } catch {
-            // The container may still be starting.
-        }
+        } catch {}
 
         await wait(1_000);
     }
@@ -98,8 +96,6 @@ describe('Docker contract smoke test', () => {
             now - 1_000,
         ).toISOString();
 
-        // 1. Test POST /logs.
-
         const ingestResponse = await fetch(
             `${BASE_URL}/logs`,
             {
@@ -142,8 +138,6 @@ describe('Docker contract smoke test', () => {
             rejected: [],
         });
 
-        // 2. Test GET /logs.
-
         const queryParameters = new URLSearchParams({
             service,
         });
@@ -165,8 +159,6 @@ describe('Docker contract smoke test', () => {
             'second smoke-test log',
             'first smoke-test log',
         ]);
-
-        // 3. Test GET /logs/aggregate.
 
         const aggregateParameters = new URLSearchParams({
             service,

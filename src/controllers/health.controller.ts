@@ -1,9 +1,9 @@
 import type { Request, Response } from 'express';
-import { pool } from '../db/client';
+import { verifyServiceHealth } from '../services/health.service';
 
 export async function healthCheck(_req: Request, res: Response) {
     try {
-        await pool.query('SELECT 1');
+        await verifyServiceHealth();
         return res.status(200).json({
             status: 'ok',
             database: 'connected',

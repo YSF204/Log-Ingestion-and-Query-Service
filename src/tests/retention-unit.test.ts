@@ -10,7 +10,7 @@ import {
 
 import {
     calculateRetentionCutoff,
-} from '../workers/retention.worker';
+} from '../domain/retention';
 
 describe('parseRetentionDays', () => {
     it('uses 30 days when the value is missing', () => {

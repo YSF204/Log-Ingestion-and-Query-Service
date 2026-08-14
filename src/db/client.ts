@@ -15,4 +15,9 @@ export const pool = new Pool({
     max: Number(process.env.DB_POOL_MAX ?? 20),
 });
 
-export const db = drizzle(pool, { schema });
+export const readPool = new Pool({
+    connectionString,
+    max: Number(process.env.DB_READ_POOL_MAX ?? 4),
+});
+
+export const readDb = drizzle(readPool, { schema });

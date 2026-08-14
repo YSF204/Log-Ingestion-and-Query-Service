@@ -21,7 +21,8 @@ async function deleteTestLogs() {
     await pool.query(
         `
             DELETE FROM "logs"
-            WHERE "attributes" ->> 'test_run_id' = $1
+            WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+              AND "attributes" ->> 'test_run_id' = $1
         `,
         [TEST_RUN_ID],
     );

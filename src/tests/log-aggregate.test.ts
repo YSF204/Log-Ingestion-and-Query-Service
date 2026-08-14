@@ -12,6 +12,8 @@ import { pool } from '../db/client';
 
 const CHECKOUT_SERVICE = 'aggregate-test-checkout';
 const AUTH_SERVICE = 'aggregate-test-auth';
+const LEGACY_CHECKOUT_SERVICE = 'agg-test-checkout';
+const LEGACY_AUTH_SERVICE = 'agg-test-auth';
 const TEST_RUN_ID = 'log-aggregate-integration-test';
 
 const since = '2026-08-01T10:00:00Z';
@@ -21,7 +23,8 @@ async function deleteTestLogs() {
     await pool.query(
         `
             DELETE FROM logs
-            WHERE attributes ->> 'test_run_id' = $1
+            WHERE attributes @> jsonb_build_object('test_run_id', $1::text)
+              AND attributes ->> 'test_run_id' = $1
         `,
         [TEST_RUN_ID],
     );
@@ -31,13 +34,30 @@ async function deleteTestLogs() {
             DELETE FROM log_rollups
             WHERE service = ANY($1::text[])
         `,
-        [[CHECKOUT_SERVICE, AUTH_SERVICE]],
+        [[
+            CHECKOUT_SERVICE,
+            AUTH_SERVICE,
+            LEGACY_CHECKOUT_SERVICE,
+            LEGACY_AUTH_SERVICE,
+        ]],
+    );
+
+    await pool.query(
+        `
+            DELETE FROM logs
+            WHERE service = ANY($1::text[])
+        `,
+        [[
+            CHECKOUT_SERVICE,
+            AUTH_SERVICE,
+            LEGACY_CHECKOUT_SERVICE,
+            LEGACY_AUTH_SERVICE,
+        ]],
     );
 }
 
 describe('GET /logs/aggregate', () => {
     beforeAll(async () => {
-        // Remove data left by an earlier failed test run.
         await deleteTestLogs();
 
         const response = await request(app)
@@ -95,7 +115,6 @@ describe('GET /logs/aggregate', () => {
                         },
                     },
                     {
-                        // This must be excluded because `until` is exclusive.
                         timestamp: '2026-08-01T10:10:00Z',
                         level: 'error',
                         service: CHECKOUT_SERVICE,
@@ -141,6 +160,38 @@ describe('GET /logs/aggregate', () => {
                     start: '2026-08-01T10:05:00.000Z',
                     group: null,
                     count: 2,
+                },
+            ],
+        });
+    });
+
+    it('does not include logs outside non-minute-aligned boundaries', async () => {
+        const response = await request(app)
+            .get('/logs/aggregate')
+            .query({
+                since: '2026-08-01T10:00:30Z',
+                until: '2026-08-01T10:05:30Z',
+                bucket: '5m',
+                group_by: 'service',
+            });
+
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({
+            buckets: [
+                {
+                    start: '2026-08-01T10:00:00.000Z',
+                    group: AUTH_SERVICE,
+                    count: 1,
+                },
+                {
+                    start: '2026-08-01T10:00:00.000Z',
+                    group: CHECKOUT_SERVICE,
+                    count: 1,
+                },
+                {
+                    start: '2026-08-01T10:05:00.000Z',
+                    group: CHECKOUT_SERVICE,
+                    count: 1,
                 },
             ],
         });

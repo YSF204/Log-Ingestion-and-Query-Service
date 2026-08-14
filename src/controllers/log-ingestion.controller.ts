@@ -1,7 +1,7 @@
 import type { Request, Response } from 'express';
 
-import { validateLogBatch } from '../schemas/log';
 import { insertLogs } from '../services/log-ingestion.service';
+import { validateLogBatch } from '../validation/log-batch.validator';
 
 export async function ingestLogs(req: Request, res: Response) {
     const batch = validateLogBatch(req.body);

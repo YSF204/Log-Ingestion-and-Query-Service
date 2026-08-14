@@ -18,7 +18,8 @@ async function deleteTestLogs() {
     await pool.query(
         `
             DELETE FROM "logs"
-            WHERE "attributes" ->> 'test_run_id' = $1
+            WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+              AND "attributes" ->> 'test_run_id' = $1
         `,
         [TEST_RUN_ID],
     );
@@ -104,7 +105,8 @@ describe('POST /logs', () => {
             `
             SELECT count(*)::integer AS "count"
             FROM "logs"
-            WHERE "attributes" ->> 'test_run_id' = $1
+            WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+              AND "attributes" ->> 'test_run_id' = $1
         `,
             [TEST_RUN_ID],
         );
@@ -209,7 +211,8 @@ describe('POST /logs', () => {
             `
             SELECT count(*)::integer AS "count"
             FROM "logs"
-            WHERE "attributes" ->> 'test_run_id' = $1
+            WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+              AND "attributes" ->> 'test_run_id' = $1
         `,
             [TEST_RUN_ID],
         );
@@ -262,7 +265,8 @@ describe('POST /logs', () => {
             `
             SELECT "message"
             FROM "logs"
-            WHERE "attributes" ->> 'test_run_id' = $1
+            WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+              AND "attributes" ->> 'test_run_id' = $1
         `,
             [TEST_RUN_ID],
         );
@@ -272,6 +276,47 @@ describe('POST /logs', () => {
                 message: 'valid log',
             },
         ]);
+    });
+
+    it('durably stores concurrent batches that share a coalesced write', async () => {
+        const timestamp = new Date().toISOString();
+        const requests = Array.from({ length: 4 }, (_, requestIndex) =>
+            request(app)
+                .post('/logs')
+                .send({
+                    logs: Array.from({ length: 2 }, (_, logIndex) => ({
+                        timestamp,
+                        level: 'info',
+                        service: TEST_SERVICE,
+                        message: `concurrent ${requestIndex}-${logIndex}`,
+                        attributes: {
+                            test_run_id: TEST_RUN_ID,
+                        },
+                    })),
+                }),
+        );
+
+        const responses = await Promise.all(requests);
+
+        for (const response of responses) {
+            expect(response.status).toBe(200);
+            expect(response.body).toEqual({
+                accepted: 2,
+                rejected: [],
+            });
+        }
+
+        const storedLogs = await pool.query<{ count: number }>(
+            `
+                SELECT count(*)::integer AS count
+                FROM logs
+                WHERE attributes @> jsonb_build_object('test_run_id', $1::text)
+                  AND attributes ->> 'test_run_id' = $1
+            `,
+            [TEST_RUN_ID],
+        );
+
+        expect(storedLogs.rows[0]?.count).toBe(8);
     });
 
     beforeEach(async () => {
@@ -331,7 +376,8 @@ describe('POST /logs', () => {
             `
                 SELECT "level", "message"
                 FROM "logs"
-                WHERE "attributes" ->> 'test_run_id' = $1
+                WHERE "attributes" @> jsonb_build_object('test_run_id', $1::text)
+                  AND "attributes" ->> 'test_run_id' = $1
                 ORDER BY "id" ASC
             `,
             [TEST_RUN_ID],

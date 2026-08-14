@@ -11,6 +11,10 @@ import {
     parseAttributeFilters,
     type AttributeFilter,
 } from './query-helpers';
+import {
+    decodeCursor,
+    type DecodedCursor,
+} from '../serializers/log-cursor';
 
 const limitSchema = z.string()
     .refine((value) => {
@@ -29,16 +33,6 @@ const logQuerySchema = z.object({
     cursor: z.string().optional(),
 }).passthrough();
 
-const cursorSchema = z.object({
-    timestamp: isoTimestampSchema,
-    id: z.string().regex(/^\d+$/),
-});
-
-export type DecodedCursor = {
-    timestamp: Date;
-    id: number;
-};
-
 export type LogQuery = {
     service: string | undefined;
     level: LogLevel | undefined;
@@ -49,42 +43,6 @@ export type LogQuery = {
     attributes: AttributeFilter[];
     cursor: DecodedCursor | undefined;
 };
-
-export function encodeCursor(row: { timestamp: Date; id: number }): string {
-    return Buffer.from(JSON.stringify({
-        timestamp: row.timestamp.toISOString(),
-        id: String(row.id),
-    }), 'utf8').toString('base64url');
-}
-
-function decodeCursor(cursor: string): DecodedCursor | null {
-    try {
-        if (!/^[A-Za-z0-9_-]+$/.test(cursor)) {
-            return null;
-        }
-
-        const json: unknown = JSON.parse(
-            Buffer.from(cursor, 'base64url').toString('utf8'),
-        );
-        const result = cursorSchema.safeParse(json);
-
-        if (!result.success) {
-            return null;
-        }
-
-        const id = Number(result.data.id);
-        if (!Number.isSafeInteger(id) || id < 1) {
-            return null;
-        }
-
-        return {
-            timestamp: new Date(result.data.timestamp),
-            id,
-        };
-    } catch {
-        return null;
-    }
-}
 
 export function parseLogQuery(query: unknown): ParseResult<LogQuery> {
     const parsedQuery = logQuerySchema.safeParse(query);

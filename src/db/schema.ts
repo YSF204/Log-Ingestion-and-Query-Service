@@ -7,14 +7,14 @@ import {
     timestamp,
 } from 'drizzle-orm/pg-core';
 
-export type LogAttributes = Record<string, string | number | boolean>;
+import type { LogAttributes } from '../domain/log';
 
 export const logs = pgTable(
     'logs',
     {
         id: bigint('id', { mode: 'number' })
             .generatedAlwaysAsIdentity()
-            .primaryKey(),
+            .notNull(),
         timestamp: timestamp('timestamp', {
             withTimezone: true,
             mode: 'date',
@@ -34,10 +34,9 @@ export const logs = pgTable(
             table.timestamp,
             table.id,
         ),
-        index('logs_level_timestamp_id_idx').on(
-            table.level,
-            table.timestamp,
-            table.id,
+        index('logs_attributes_gin_idx').using(
+            'gin',
+            table.attributes.asc().op('jsonb_path_ops'),
         ),
     ],
 );
@@ -54,6 +53,10 @@ export const logRollups = pgTable(
         count: bigint('count', { mode: 'number' }).notNull().default(0),
     },
     (table) => [
-        index('log_rollups_bucket_idx').on(table.bucketStart),
+        index('log_rollups_bucket_service_level_idx').on(
+            table.bucketStart,
+            table.service,
+            table.level,
+        ),
     ],
 );
