@@ -19,6 +19,10 @@ export const ingestionConfig = {
         process.env.INGEST_MAX_COALESCED_LOGS,
         10_000,
     ),
+    maximumConcurrentWriters: readPositiveInteger(
+        process.env.INGEST_MAX_CONCURRENT_WRITERS,
+        2,
+    ),
     indexCleanupIdleMilliseconds: readPositiveInteger(
         process.env.GIN_CLEANUP_IDLE_MS,
         2_000,

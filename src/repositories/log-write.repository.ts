@@ -20,9 +20,8 @@ export async function writeLogBatch(entries: ValidLog[]): Promise<void> {
                 'FROM STDIN',
             ),
         );
-        const rows = entries.map(serializeLogForCopy);
-
-        await pipeline(Readable.from(rows), copyStream);
+        const payload = entries.map(serializeLogForCopy).join('');
+        await pipeline(Readable.from([payload]), copyStream);
         await incrementRollups(client, groupRollupDeltas(entries));
         await client.query('COMMIT');
     } catch (error) {

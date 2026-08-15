@@ -5,7 +5,11 @@ import { Counter } from 'k6/metrics';
 
 const BASE_URL = __ENV.BASE_URL || 'http://app:8080';
 const BATCH_SIZE = Number(__ENV.BATCH_SIZE || 100);
-const LOGS_PER_SECOND = Number(__ENV.LOGS_PER_SECOND || 15_000);
+// Compose exposes LOAD_LOGS_PER_SECOND. Keep LOGS_PER_SECOND as a
+// backwards-compatible alias for direct k6 invocations.
+const LOGS_PER_SECOND = Number(
+    __ENV.LOAD_LOGS_PER_SECOND || __ENV.LOGS_PER_SECOND || 15_000,
+);
 const DURATION = __ENV.DURATION || '30s';
 const RATE_STAGES = parseRateStages(__ENV.LOAD_RATE_STAGES);
 const PRE_ALLOCATED_VUS = Number(__ENV.PRE_ALLOCATED_VUS || 100);

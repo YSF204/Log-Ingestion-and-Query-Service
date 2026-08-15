@@ -48,8 +48,9 @@ services:
       DATABASE_URL: postgres://logs_user:logs_password@db:5432/logs_db
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
       DB_READ_POOL_MAX: 4
-      INGEST_COALESCE_MS: 50
-      INGEST_MAX_COALESCED_LOGS: 10000
+      INGEST_COALESCE_MS: 10
+      INGEST_MAX_COALESCED_LOGS: 50000
+      INGEST_MAX_CONCURRENT_WRITERS: 2
       GIN_CLEANUP_IDLE_MS: 2000
     depends_on:
       db:

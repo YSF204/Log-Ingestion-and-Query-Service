@@ -9,6 +9,7 @@ type PendingInsert = {
 type IngestionQueueConfig = {
     coalesceMilliseconds: number; // how long to wait for req
     maximumCoalescedLogs: number; // max number of combined logs
+    maximumConcurrentWriters: number;
     maintenanceIdleMilliseconds: number; // how long to wait before running maintenance task    
 };
 
@@ -21,7 +22,7 @@ export class IngestionQueueService {
     private pendingLogCount = 0;
     private flushTimer: NodeJS.Timeout | undefined; // delay timer
     private maintenanceTimer: NodeJS.Timeout | undefined; // This stores the timer for the delayed index cleanup task.
-    private writerRunning = false;
+    private activeWriters = 0;
 
     constructor(
         private readonly writer: BatchWriter,
@@ -39,7 +40,10 @@ export class IngestionQueueService {
     }
 
     private scheduleFlush(): void {
-        if (this.writerRunning || this.flushTimer !== undefined) {
+        if (
+            this.activeWriters >= this.config.maximumConcurrentWriters ||
+            this.flushTimer !== undefined
+        ) {
             return;
         }
 
@@ -54,14 +58,17 @@ export class IngestionQueueService {
     }
 
     private async flush(): Promise<void> {
-        if (this.writerRunning || this.pendingInserts.length === 0) {
+        if (
+            this.activeWriters >= this.config.maximumConcurrentWriters ||
+            this.pendingInserts.length === 0
+        ) {
             this.scheduleFlush();
             return;
         }
 
         const inserts = this.takeNextBatch();
         const entries = inserts.flatMap((insert) => insert.entries); // [{entire : [A1, A2]}, {entire : [B1, B2]}] => [A1, A2, B1, B2]
-        this.writerRunning = true;
+        this.activeWriters += 1;
 
         try {
             await this.writer(entries);
@@ -69,10 +76,10 @@ export class IngestionQueueService {
         } catch (error) {
             inserts.forEach((insert) => insert.reject(error));
         } finally {
-            this.writerRunning = false;
+            this.activeWriters -= 1;
             this.scheduleFlush();
 
-            if (this.pendingInserts.length === 0) {
+            if (this.pendingInserts.length === 0 && this.activeWriters === 0) {
                 this.scheduleIdleTask();
             }
         }
@@ -110,7 +117,7 @@ export class IngestionQueueService {
         this.maintenanceTimer = setTimeout(() => {
             this.maintenanceTimer = undefined;
 
-            if (!this.writerRunning && this.pendingInserts.length === 0) {
+            if (this.activeWriters === 0 && this.pendingInserts.length === 0) {
                 void this.idleTask();
             }
         }, this.config.maintenanceIdleMilliseconds);

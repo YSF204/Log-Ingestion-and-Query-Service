@@ -155,8 +155,9 @@ npm --prefix dashboard run dev
 | `RETENTION_DAYS` | `30` | Log retention period |
 | `DB_POOL_MAX` | `20` | Database connection pool size |
 | `DB_READ_POOL_MAX` | `4` | Reserved database connections for query and aggregation traffic |
-| `INGEST_COALESCE_MS` | `50` | Maximum wait in milliseconds for combining concurrent ingest requests |
-| `INGEST_MAX_COALESCED_LOGS` | `10000` | Maximum logs written in one coalesced transaction |
+| `INGEST_COALESCE_MS` | `10` | Maximum wait in milliseconds for combining concurrent ingest requests |
+| `INGEST_MAX_COALESCED_LOGS` | `50000` | Maximum logs written in one coalesced transaction |
+| `INGEST_MAX_CONCURRENT_WRITERS` | `2` | Number of bounded COPY transactions allowed in parallel |
 | `GIN_CLEANUP_IDLE_MS` | `2000` | Idle time before merging buffered attribute-index entries |
 
 Authentication, multi-tenancy, active rate limiting, and alerting are not implemented. Plain `docker compose up` always starts the unauthenticated core service with no quotas.

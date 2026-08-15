@@ -1,0 +1,2 @@
+-- Intentionally empty. The experimental level index was measured to add
+-- substantial write amplification and is removed by migration 0014.

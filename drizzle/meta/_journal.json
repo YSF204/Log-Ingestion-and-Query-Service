@@ -92,6 +92,20 @@
       "when": 1786637220000,
       "tag": "0012_tune_append_only_maintenance",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786830000000,
+      "tag": "0013_query_filter_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786830060000,
+      "tag": "0014_remove_write_heavy_level_index",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,8 @@ const ingestionQueue = new IngestionQueueService(
     {
         coalesceMilliseconds: ingestionConfig.coalesceMilliseconds,
         maximumCoalescedLogs: ingestionConfig.maximumCoalescedLogs,
+        maximumConcurrentWriters:
+            ingestionConfig.maximumConcurrentWriters,
         maintenanceIdleMilliseconds:
             ingestionConfig.indexCleanupIdleMilliseconds,
     },
