@@ -42,7 +42,10 @@ export function buildLogFilterConditions(query: LogFilters): SQL[] {
     }
 
     if (query.q !== undefined) {
-        conditions.push(ilike(logs.message, `%${query.q}%`));
+        // `q` is a substring filter, so SQL LIKE metacharacters in the
+        // user's value must be treated literally.
+        const escapedQuery = query.q.replace(/[\\%_]/g, '\\$&');
+        conditions.push(ilike(logs.message, `%${escapedQuery}%`));
     }
 
     for (const attribute of query.attributes) {
