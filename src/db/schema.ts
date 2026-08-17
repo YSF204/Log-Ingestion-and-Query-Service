@@ -34,15 +34,6 @@ export const logs = pgTable(
             table.timestamp,
             table.id,
         ),
-        index('logs_level_timestamp_id_idx').on(
-            table.level,
-            table.timestamp,
-            table.id,
-        ),
-        index('logs_message_trgm_idx').using(
-            'gin',
-            table.message.op('gin_trgm_ops'),
-        ),
         index('logs_attributes_gin_idx').using(
             'gin',
             table.attributes.asc().op('jsonb_path_ops'),

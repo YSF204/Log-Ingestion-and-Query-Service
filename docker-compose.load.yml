@@ -1,0 +1,22 @@
+services:
+  k6:
+    image: grafana/k6:latest
+    profiles:
+      - load-test
+    volumes:
+      - ./load:/scripts:ro
+    environment:
+      BASE_URL: http://app:8080
+      BATCH_SIZE: ${LOAD_BATCH_SIZE:-500}
+      LOGS_PER_SECOND: ${LOAD_LOGS_PER_SECOND:-22500}
+      DURATION: ${LOAD_DURATION:-60s}
+      LOAD_RATE_STAGES: ${LOAD_RATE_STAGES:-}
+      LOAD_MODE: ${LOAD_MODE:-both}
+      LOAD_AGGREGATION_RATE: ${LOAD_AGGREGATION_RATE:-1}
+      PRE_ALLOCATED_VUS: ${LOAD_PRE_ALLOCATED_VUS:-100}
+      MAX_VUS: ${LOAD_MAX_VUS:-500}
+      AGGREGATION_WINDOW_MINUTES: ${LOAD_AGGREGATION_WINDOW_MINUTES:-60}
+    command: [run, /scripts/k6.js]
+    depends_on:
+      app:
+        condition: service_healthy

@@ -13,7 +13,7 @@
     "db:migrate": "drizzle-kit migrate",
     "start": "tsx src/server.ts",
     "test:smoke": "vitest run src/smoke/contract-smoke.test.ts",
-    "test:load": "docker compose --profile load-test up -d --build --wait --wait-timeout 60 db app && docker compose --profile load-test run --rm --no-deps k6"
+    "test:load": "docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load-test up -d --build --wait --wait-timeout 60 db app && docker compose -f docker-compose.yml -f docker-compose.load.yml --profile load-test run --rm --no-deps k6"
   },
   "license": "ISC",
   "type": "commonjs",

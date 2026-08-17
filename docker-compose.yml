@@ -48,11 +48,10 @@ services:
     environment:
       DATABASE_URL: postgres://logs_user:logs_password@db:5432/logs_db
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
-      DB_READ_POOL_MAX: 4
-      INGEST_COALESCE_MS: 10
+      INGEST_COALESCE_MS: 50
       INGEST_MAX_COALESCED_LOGS: 50000
-      INGEST_MAX_CONCURRENT_WRITERS: 2
-      GIN_CLEANUP_IDLE_MS: 2000
+      INGEST_MAX_CONCURRENT_WRITERS: 3
+      GIN_CLEANUP_IDLE_MS: 60000
     depends_on:
       db:
         condition: service_healthy
@@ -65,30 +64,6 @@ services:
       interval: 1s
       timeout: 2s
       retries: 30
-
-  k6:
-    image: grafana/k6:latest
-    profiles:
-      - load-test
-    volumes:
-      - ./load:/scripts:ro
-    environment:
-      BASE_URL: http://app:8080
-      BATCH_SIZE: ${LOAD_BATCH_SIZE:-500}
-      LOGS_PER_SECOND: ${LOAD_LOGS_PER_SECOND:-22500}
-      DURATION: ${LOAD_DURATION:-60s}
-      LOAD_RATE_STAGES: ${LOAD_RATE_STAGES:-}
-      LOAD_MODE: ${LOAD_MODE:-both}
-      LOAD_AGGREGATION_RATE: ${LOAD_AGGREGATION_RATE:-1}
-      PRE_ALLOCATED_VUS: ${LOAD_PRE_ALLOCATED_VUS:-100}
-      MAX_VUS: ${LOAD_MAX_VUS:-500}
-      AGGREGATION_WINDOW_MINUTES: ${LOAD_AGGREGATION_WINDOW_MINUTES:-60}
-    command:
-      - run
-      - /scripts/k6.js
-    depends_on:
-      app:
-        condition: service_healthy
 
 volumes:
   postgres_data:

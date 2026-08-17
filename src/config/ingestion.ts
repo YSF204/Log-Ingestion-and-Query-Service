@@ -21,10 +21,10 @@ export const ingestionConfig = {
     ),
     maximumConcurrentWriters: readPositiveInteger(
         process.env.INGEST_MAX_CONCURRENT_WRITERS,
-        2,
+        3,
     ),
     indexCleanupIdleMilliseconds: readPositiveInteger(
         process.env.GIN_CLEANUP_IDLE_MS,
-        2_000,
+        60_000,
     ),
 };
