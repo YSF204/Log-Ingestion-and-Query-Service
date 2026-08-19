@@ -226,9 +226,10 @@ export function setup() {
         if (response.status === 200) {
             return {
                 runId: String(Date.now()),
-                aggregationSince: new Date(
+                aggregationSince: toMinuteBoundary(
                     Date.now() - AGGREGATION_WINDOW_MINUTES * 60_000,
-                ).toISOString(),
+                    'floor',
+                ),
             };
         }
 
@@ -307,7 +308,7 @@ export function ingestLogs(data) {
 export function aggregateLogs(data) {
     const parameters = [
         `since=${encodeURIComponent(data.aggregationSince)}`,
-        `until=${encodeURIComponent(new Date(Date.now() + 60_000).toISOString())}`,
+        `until=${encodeURIComponent(toMinuteBoundary(Date.now() + 60_000, 'ceil'))}`,
         'bucket=1m',
         'group_by=service',
     ].join('&');
@@ -335,4 +336,12 @@ function readResponseBody(response) {
     } catch {
         return null;
     }
+}
+
+function toMinuteBoundary(milliseconds, mode) {
+    const minute = mode === 'ceil'
+        ? Math.ceil(milliseconds / 60_000)
+        : Math.floor(milliseconds / 60_000);
+
+    return new Date(minute * 60_000).toISOString();
 }

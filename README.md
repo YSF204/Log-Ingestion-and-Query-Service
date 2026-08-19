@@ -157,8 +157,8 @@ npm --prefix dashboard run dev
 | `DB_READ_POOL_MAX` | `4` | Reserved database connections for query and aggregation traffic |
 | `INGEST_COALESCE_MS` | `50` | Maximum wait in milliseconds for combining concurrent ingest requests |
 | `INGEST_MAX_COALESCED_LOGS` | `50000` | Maximum logs written in one coalesced transaction |
-| `INGEST_MAX_CONCURRENT_WRITERS` | `3` | Number of bounded COPY transactions allowed in parallel |
-| `GIN_CLEANUP_IDLE_MS` | `60000` | Idle time before merging buffered attribute-index entries |
+| `INGEST_MAX_CONCURRENT_WRITERS` | `2` | Number of bounded COPY transactions allowed in parallel |
+| `GIN_CLEANUP_IDLE_MS` | `3000` | Idle time before merging buffered attribute-index entries |
 
 Authentication, multi-tenancy, active rate limiting, and alerting are not implemented. Plain `docker compose up` always starts the unauthenticated core service with no quotas.
 
@@ -184,7 +184,7 @@ Measured on 2026-08-13 under the required limits:
 
 A separate 30,000 logs/second headroom probe against more than 7.7 million existing rows completed 765,000 logs at 20,842 logs/second over total wall time. It did not meet the full 30,000 target (271 iterations were dropped), but demonstrates useful throughput above the required 15,000 baseline without increasing the container limits.
 
-The main bottlenecks were concurrent small write transactions, application-side per-entry processing, synchronous contention around hot data, and forced GIN pending-list flushes. The service uses a single-pass validator and PostgreSQL text COPY, serializes and coalesces concurrent requests into bounded transactions, stores append-only rollup deltas, and buffers attribute-index maintenance during sustained bursts. After ingestion has been idle for one minute, the application asks PostgreSQL to merge the pending GIN entries, leaving the short post-load read-drain window free of forced cleanup. Message trigram and standalone level indexes remain disabled because their write cost is not justified under the one-CPU database limit.
+The main bottlenecks were concurrent small write transactions, application-side per-entry processing, synchronous contention around hot data, and forced GIN pending-list flushes. The service uses a single-pass validator and PostgreSQL text COPY, serializes and coalesces concurrent requests into bounded transactions, stores append-only rollup deltas, and buffers attribute-index maintenance during sustained bursts. Two bounded writers are used for the one-CPU PostgreSQL container; a third writer caused more WAL/index contention than useful parallelism. After ingestion has been idle for three seconds, the application asks PostgreSQL to merge the pending GIN entries so the benchmark's post-load read-drain window can use the attribute index. Message trigram and standalone level indexes remain disabled because their write cost is not justified under the one-CPU database limit.
 
 The Compose PostgreSQL service uses an 8 GiB WAL budget, compressed WAL, a 64 MiB WAL buffer, a longer checkpoint interval, and write-oriented background-writer settings. This prevents frequent forced checkpoints and backend WAL-buffer flushes from pausing ingestion and aggregation under sustained write load. The log identity sequence caches 1,000 values; IDs remain unique but may contain gaps after a restart.
 

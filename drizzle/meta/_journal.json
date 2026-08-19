@@ -113,6 +113,13 @@
       "when": 1787000000000,
       "tag": "0015_remove_write_heavy_query_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1787010000000,
+      "tag": "0016_tune_attribute_pending_list",
+      "breakpoints": true
     }
   ]
 }

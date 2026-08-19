@@ -19,6 +19,7 @@ type IdleTask = () => Promise<void>; // claenup function
 
 export class IngestionQueueService {
     private readonly pendingInserts: PendingInsert[] = [];
+    private pendingInsertHead = 0;
     private pendingLogCount = 0;
     private flushTimer: NodeJS.Timeout | undefined; // delay timer
     private maintenanceTimer: NodeJS.Timeout | undefined; // This stores the timer for the delayed index cleanup task.
@@ -60,7 +61,7 @@ export class IngestionQueueService {
     private async flush(): Promise<void> {
         if (
             this.activeWriters >= this.config.maximumConcurrentWriters ||
-            this.pendingInserts.length === 0
+            this.pendingInsertHead >= this.pendingInserts.length
         ) {
             this.scheduleFlush();
             return;
@@ -79,7 +80,10 @@ export class IngestionQueueService {
             this.activeWriters -= 1;
             this.scheduleFlush();
 
-            if (this.pendingInserts.length === 0 && this.activeWriters === 0) {
+            if (
+                this.pendingInsertHead >= this.pendingInserts.length &&
+                this.activeWriters === 0
+            ) {
                 this.scheduleIdleTask();
             }
         }
@@ -89,8 +93,8 @@ export class IngestionQueueService {
         const inserts: PendingInsert[] = [];
         let logCount = 0;
 
-        while (this.pendingInserts.length > 0) {
-            const next = this.pendingInserts[0]!;
+        while (this.pendingInsertHead < this.pendingInserts.length) {
+            const next = this.pendingInserts[this.pendingInsertHead]!;
 
             if (
                 inserts.length > 0 &&
@@ -100,10 +104,19 @@ export class IngestionQueueService {
                 break;
             }
 
-            this.pendingInserts.shift();
+            this.pendingInsertHead += 1;
             inserts.push(next);
             logCount += next.entries.length;
             this.pendingLogCount -= next.entries.length;
+        }
+
+        // Array#shift() moves every queued request on every flush. During a
+        // sustained overload that turns queue draining into O(n^2) work in
+        // the application. Reclaim the consumed prefix only when the queue
+        // has drained completely; this keeps the hot path O(1) per request.
+        if (this.pendingInsertHead === this.pendingInserts.length) {
+            this.pendingInserts.length = 0;
+            this.pendingInsertHead = 0;
         }
 
         return inserts;
@@ -117,7 +130,10 @@ export class IngestionQueueService {
         this.maintenanceTimer = setTimeout(() => {
             this.maintenanceTimer = undefined;
 
-            if (this.activeWriters === 0 && this.pendingInserts.length === 0) {
+            if (
+                this.activeWriters === 0 &&
+                this.pendingInsertHead >= this.pendingInserts.length
+            ) {
                 void this.idleTask();
             }
         }, this.config.maintenanceIdleMilliseconds);

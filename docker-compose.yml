@@ -50,8 +50,12 @@ services:
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
       INGEST_COALESCE_MS: 50
       INGEST_MAX_COALESCED_LOGS: 50000
-      INGEST_MAX_CONCURRENT_WRITERS: 3
-      GIN_CLEANUP_IDLE_MS: 60000
+      # PostgreSQL is limited to one CPU. Two bounded writers preserve COPY
+      # throughput while avoiding the WAL/index contention caused by a third.
+      INGEST_MAX_CONCURRENT_WRITERS: 2
+      # The load generator gives the service a 30s read-after-write drain;
+      # clean the buffered GIN entries before that window expires.
+      GIN_CLEANUP_IDLE_MS: 3000
     depends_on:
       db:
         condition: service_healthy

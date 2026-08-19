@@ -25,6 +25,6 @@ export const ingestionConfig = {
     ),
     indexCleanupIdleMilliseconds: readPositiveInteger(
         process.env.GIN_CLEANUP_IDLE_MS,
-        60_000,
+        3_000,
     ),
 };
